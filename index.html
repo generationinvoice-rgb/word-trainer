@@ -313,11 +313,16 @@ textarea{width:100%;font:inherit;font-size:.9rem;padding:10px 12px;border:1.5px 
 /* ---------- where the server is (v4) ----------
    Two places, one file: on GitHub Pages the page calls Apps Script with fetch (doPost);
    inside Google's /exec it uses google.script.run. The script id, the key and the name come from
-   the link (#s=...&k=...&n=...) and are kept on the device; they are never part of the code. */
+   the link (#s=...&k=...&n=...) and are kept on the device; they are never part of the code.
+   s and k are taken from the link only together (both present, s a valid script id, k not empty):
+   a link with only one of them, or a bad s, changes nothing, so the stored key never goes to another script.
+   n alone may change the name. */
 const GSR=(typeof google!=="undefined"&&google.script&&google.script.run)?google.script.run:null;
 const CFG=(function(){let c={};try{c=JSON.parse(localStorage.getItem("maya-cfg")||"{}")||{}}catch(e){c={}}
   try{const h=new URLSearchParams(location.hash.slice(1));let ch=false;
-    ["s","k","n"].forEach(x=>{const v=h.get(x);if(v!==null&&v!==c[x]){c[x]=v;ch=true}});
+    const hs=h.get("s"),hk=h.get("k"),hn=h.get("n");
+    if(hs&&hk&&/^AKfyc[\w-]{20,}$/.test(hs)&&(hs!==c.s||hk!==c.k)){c.s=hs;c.k=hk;ch=true}
+    if(hn!==null&&hn!==c.n){c.n=hn;ch=true}
     if(ch)localStorage.setItem("maya-cfg",JSON.stringify(c))}catch(e){}
   return c})();
 const API_URL=!GSR&&/^AKfyc[\w-]{20,}$/.test(CFG.s||"")&&CFG.k?"https://script.google.com/macros/s/"+CFG.s+"/exec":"";
