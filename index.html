@@ -1168,14 +1168,18 @@ function prepareRows(r){
   }
 }
 const lessonDeck=(unit,lesson)=>{const id="L"+lesson;return lesson&&DECKS[id]&&DECKS[id].unit===String(unit)?id:null};
+/* same rules as saveNotebookWords: the same word under the same main number is already in the notebook (skipped);
+   a number that belongs to another word is "used" and must be changed before Save (#230, or #23 next to 23a/23b) */
 function nbDup(r){const all=nbAll();let b=baseNum(r.num);
   if(!String(r.num).trim()){const i=ADD.rows.indexOf(r);for(let k=i-1;k>=0;k--){const n=baseNum(ADD.rows[k].num);if(n){b=n;break}}}
-  return all.find(x=>x.id===String(r.num).trim()&&String(r.num).trim())||all.find(x=>b&&baseNum(x.id)===b&&lc(x.en)===lc(r.en))||null}
+  return all.find(x=>b&&baseNum(x.id)===b&&lc(x.en)===lc(r.en))||null}
+function nbUsed(r){const t=String(r.num||"").trim();if(!t)return null;const all=nbAll();
+  return all.find(x=>x.id===t)||(/^\d+$/.test(t)&&all.find(x=>baseNum(x.id)===t))||null}
 function unitWords(unit){const u=unitOf(unit);const s=new Set();if(!u)return s;
   u.sets.forEach(d=>DECKS[d].items.forEach(it=>[it.en,it.opp,it.label,it.base].forEach(v=>{if(v)s.add(lc(v))})));return s}
 function rowState(r,uw){
-  if(r.kind==="nb"){const dup=r.en.trim()?nbDup(r):null;
-    return{dup,block:!dup&&(r.status==="choose"||r.status==="unreadable")&&!r.resolved,save:!!r.en.trim()&&!dup}}
+  if(r.kind==="nb"){const dup=r.en.trim()?nbDup(r):null;const used=r.en.trim()&&!dup?nbUsed(r):null;
+    return{dup,used,block:!!used||!dup&&(r.status==="choose"||r.status==="unreadable")&&!r.resolved,save:!!r.en.trim()&&!dup&&!used}}
   const dup=uw&&uw.has(lc(r.en));return{dup,block:false,save:r.keep&&!!r.en.trim()&&!dup}}
 const secOk=()=>!!(ADD.sec&&ADD.sec.unit&&ADD.sec.lesson&&new RegExp("^"+ADD.sec.unit+"\\.\\d+$").test(ADD.sec.lesson));
 /* new notebook numbers must follow the notebook (same rule as saveNotebookWords on the server) */
@@ -1202,22 +1206,23 @@ function secCard(){const s=ADD.sec;const units=Math.max(10,...UNITS.map(u=>u.num
     ${exist?`<p class="hint">The words are added to the set “${esc(DECKS[exist].name)}”.</p>`:""}
     <button class="btn primary" id="secdone" style="min-height:44px">Done</button>`:""}
   </section>`}
-function rowHtml(r,i,uw){const stt=rowState(r,uw);
+function rowHtml(r,i,uw,ro){const stt=rowState(r,uw);const dis=ro?" disabled":"";
   if(r.kind==="tb"){const note=stt.dup?`<div class="note info">${icon("alert")}<span>Already in Unit ${esc(ADD.sec.unit)}. It will not be added again.</span></div>`:"";
     return `<div class="wrow tb${stt.save?"":" off"}" data-row="${i}"><button class="check" data-keep aria-pressed="${r.keep&&!stt.dup}" aria-label="Add this word" ${stt.dup?"disabled":""}>${icon("check")}</button>
-      <div class="pair"><input value="${esc(r.en)}" aria-label="English" data-f="en" lang="en"><input value="${esc(r.bg)}" aria-label="Bulgarian" data-f="bg" placeholder="Bulgarian" lang="bg"></div>
-      <button class="iconbtn" data-del aria-label="Remove">${icon("trash")}</button>${note}</div>`}
+      <div class="pair"><input value="${esc(r.en)}" aria-label="English" data-f="en" lang="en"${dis}><input value="${esc(r.bg)}" aria-label="Bulgarian" data-f="bg" placeholder="Bulgarian" lang="bg"${dis}></div>
+      ${ro?"":`<button class="iconbtn" data-del aria-label="Remove">${icon("trash")}</button>`}${note}</div>`}
   const wrote=pairTxt(r.wen,lc(r.wbg)!==lc(r.bg)||!r.bg?r.wbg:"");
   let note="";
   if(stt.dup)note=`<div class="note info">${icon("alert")}<span>Already in your notebook as #${esc(stt.dup.id)} ${esc(stt.dup.en)}. It will not be added again.</span></div>`;
+  else if(stt.used)note=`<div class="note">${icon("alert")}<span>#${esc(String(r.num).trim())} is already used for “${esc(stt.used.en)}”. Change the number.</span></div>`;
   else if(r.status==="choose"&&!r.resolved)note=`<div class="note">${icon("alert")}<span>${esc(r.note||"Which one is right?")} You wrote “${esc(pairTxt(r.wen,r.wbg))}”.</span></div>
     <div class="opts2">${r.options.slice(0,2).map((o,k)=>`<button class="chip" data-opt="${k}">${esc(pairTxt(o.en,o.bg))}</button>`).join("")}<button class="chip" data-opt="both">Both</button></div>`;
   else if(r.status==="unreadable"&&!r.resolved)note=`<div class="note">${icon("alert")}<span>${esc(r.note||"We couldn't read all of it.")}</span><button class="textbtn" data-okrow>Looks right</button></div>`;
   else if(r.status==="fixed"||r.status==="choose")note=`<div class="note info">${icon("pen")}<span>You wrote “${esc(r.status==="choose"?pairTxt(r.wen,r.wbg):wrote)}”. ${esc(r.note)}</span></div>`;
   return `<div class="wrow${stt.block?" flag":""}${stt.dup?" off":""}" data-row="${i}">
-    <input class="num" value="${esc(r.num)}" aria-label="Number" data-f="num" placeholder="#">
-    <div class="pair"><input value="${esc(r.en)}" aria-label="English" data-f="en" lang="en"><input value="${esc(r.bg)}" aria-label="Bulgarian" data-f="bg" placeholder="Bulgarian" lang="bg"></div>
-    <button class="iconbtn" data-del aria-label="Remove">${icon("trash")}</button>${note}</div>`}
+    <input class="num" value="${esc(r.num)}" aria-label="Number" data-f="num" placeholder="#"${dis}>
+    <div class="pair"><input value="${esc(r.en)}" aria-label="English" data-f="en" lang="en"${dis}><input value="${esc(r.bg)}" aria-label="Bulgarian" data-f="bg" placeholder="Bulgarian" lang="bg"${dis}></div>
+    ${ro?"":`<button class="iconbtn" data-del aria-label="Remove">${icon("trash")}</button>`}${note}</div>`}
 
 SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.sec&&ADD.sec.unit);
   const states=ADD.rows.map(r=>rowState(r,uw));
@@ -1232,7 +1237,7 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
     openSheet(`<div class="sheet-head"><div class="txt"><h2>Discard these words?</h2><p>The words from this photo will not be saved.</p></div></div>
       <div style="display:flex;gap:8px"><button class="btn ghost" id="dy" style="flex:1">Discard</button><button class="btn primary" id="dn" style="flex:1">Keep checking</button></div>`,
       sh=>{sh.querySelector("#dn").onclick=()=>closeSheet();sh.querySelector("#dy").onclick=()=>{closeSheet(true);back()}})}};
-  const dupList=()=>`<div class="rev">${dupIdx.map(i=>rowHtml(ADD.rows[i],i,uw)).join("")}</div>`;
+  const dupList=ro=>`<div class="rev">${dupIdx.map(i=>rowHtml(ADD.rows[i],i,uw,ro)).join("")}</div>`;
   /* the whole page is already in the app (#2) */
   if(allDup){
     let range="";
@@ -1245,7 +1250,7 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
         <h1>This page is already in ${nb?"your notebook":"Unit "+esc(ADD.sec.unit)}</h1>
         <p class="muted">${ADD.rows.length===1?"The word is":"All "+ADD.rows.length+" words are"} already ${inWhere}. There is nothing new to save.</p></div>
       <button class="btn soft block" id="dups">${ADD.showDups?"Hide the words":"Show the words"}</button>
-      ${ADD.showDups?dupList():""}</div>`,
+      ${ADD.showDups?dupList(true):""}</div>`,
       dock:`<button class="btn primary block" id="again">${icon("camera")} Take another photo</button><button class="btn ghost block" id="hm" style="min-height:48px">${icon("home")} Home</button>`,
       after(){wireBack();$("#hm").onclick=goHome;$("#again").onclick=()=>back();
         $("#dups").onclick=()=>{ADD.showDups=!ADD.showDups;keep(render)}}};
@@ -1314,7 +1319,7 @@ function reloadNotebook(){return call("getNotebook").then(t2=>{let rws=[];try{rw
 function doSave(){if(ADD.saving)return;
   const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.sec.unit);
   const rows=ADD.rows.filter(r=>rowState(r,uw).save);if(!rows.length)return;
-  const sendRows=nb?ADD.rows.filter(r=>r.en.trim()):rows;
+  const sendRows=nb?ADD.rows.filter(r=>r.en.trim()&&!rowState(r,uw).used):rows; /* never send a row whose number is used */
   ADD.saving=true;keep(render);
   const fail=()=>{ADD.saving=false;toast("Could not save. Check the connection and try again.");if(top_().name==="addReview")keep(render)};
   if(nb){
