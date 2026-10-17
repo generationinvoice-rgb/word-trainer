@@ -634,7 +634,10 @@ const st=(d,id)=>S.st[key(d,id)];
 const isMistake=(d,id)=>{const s=st(d,id);return !!s&&s.bad>0&&s.b<2};
 const isLearned=(d,id)=>{const s=st(d,id);return !!s&&s.b>=3};
 function grade(d,id,ok){const k=key(d,id);const s=S.st[k]||{b:0,ok:0,bad:0,t:0};
-  if(ok){s.ok++;s.b=Math.min(5,s.b+1)}else{s.bad++;s.b=0}s.t=Date.now();S.st[k]=s;save()}
+  if(ok){s.ok++;s.b=Math.min(5,s.b+1)}else{s.bad++;s.b=0}s.t=Date.now();S.st[k]=s;
+  /* the day counts for the streak with the first answer, not when a practice is opened */
+  if(!S.days.includes(today())){S.days.push(today());S.days=S.days.slice(-60)}
+  save()}
 function streak(){const set=new Set(S.days);let n=0;const d=new Date();
   if(!set.has(today()))d.setDate(d.getDate()-1);
   while(set.has(ymd(d))){n++;d.setDate(d.getDate()-1)}return n}
@@ -969,7 +972,6 @@ function startQuiz(p,onlyMistakes,items){
   const lbd=Object.assign({},S.pref.lastByDeck,{[d]:{mode:p.mode,dir:p.dir}});
   if(!onlyMistakes&&!items)S.pref=Object.assign({},p);
   S.pref.lastByDeck=lbd;if(p.flashDir)S.pref.flashDir=p.flashDir;
-  if(!S.days.includes(today())){S.days.push(today());S.days=S.days.slice(-60)}
   save();
   Q={p,deck:d,mode:p.mode,dir:p.dir,mistakes:!!onlyMistakes,queue:list.map(it=>({it,retry:false})),i:0,first:new Map(),
     items:new Map(list.map(it=>[it.id,it])),total:list.length};
