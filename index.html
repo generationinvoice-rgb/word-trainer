@@ -562,8 +562,15 @@ function apiCall(fn,args){
 }
 function saveLocal(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 function save(){S.updated=Date.now();saveLocal();if(GAS){clearTimeout(pushTimer);pushTimer=setTimeout(push,1500)}}
-function push(){clearTimeout(pushTimer);pushTimer=null;if(!GAS)return;
-  call("saveState",JSON.stringify(S)).then(()=>{cloud="ok";syncChanged()}).catch(()=>{cloud="err";syncChanged()})}
+/* The cloud file is only written with state merged with it: push() reads and merges getState first when the
+   last successful read is missing or older than PULL_AGE. If the read or the write fails, it tries again later. */
+let PULLED_AT=0,PULLING=null,retryTimer=null;
+const PULL_AGE=60000,RETRY_MS=30000;
+function retryLater(){clearTimeout(retryTimer);retryTimer=setTimeout(push,RETRY_MS)}
+function push(){clearTimeout(pushTimer);pushTimer=null;clearTimeout(retryTimer);retryTimer=null;if(!GAS)return;
+  if(!PULLED_AT||Date.now()-PULLED_AT>PULL_AGE){pullState().then(send,retryLater);return}
+  send()}
+function send(){call("saveState",JSON.stringify(S)).then(()=>{cloud="ok";syncChanged()}).catch(()=>{cloud="err";syncChanged();retryLater()})}
 function merge(a,b){
   const out={st:{},pref:(b.updated||0)>(a.updated||0)?(b.pref||a.pref):a.pref,updated:Math.max(a.updated||0,b.updated||0),resetAt:Math.max(a.resetAt||0,b.resetAt||0)};
   const as=a.st||{},bs=b.st||{};
@@ -576,14 +583,20 @@ function merge(a,b){
 const syncText=()=>cloud==="ok"?"Your progress is saved online, on all your devices.":cloud==="syncing"?"Loading your progress...":cloud==="err"?"No connection: progress is saved on this device and will sync later.":"Your progress is saved on this device only.";
 function syncChanged(){const n=$("#sync");if(n)n.textContent=syncText();const t=top_();if(t&&t.name==="home"&&NAV.stack.length===1&&!SHEET_OPEN){const has=!!$("#syncerr");if(has!==(cloud==="err"))keep(render)}}
 function refreshRoot(){const t=top_();if(!t||SHEET_OPEN||NAV.stack.length!==1)return;if(["home","mistakes","progress"].includes(t.name))keep(render)}
-function pull(){if(!GAS)return;
-  call("getState").then(txt=>{let srv={};try{srv=txt?JSON.parse(txt):{}}catch(e){}
+/* reads progress.json and merges it into S; an unreadable answer counts as a failure, never as an empty cloud */
+function pullState(){if(PULLING)return PULLING;
+  PULLING=call("getState").then(txt=>{let srv={};
+    if(txt){srv=JSON.parse(txt);if(!srv||typeof srv!=="object"||Array.isArray(srv))throw new Error("Bad progress file")}
     if((srv.resetAt||0)<RESET_AT)srv={};
-    S=merge(S,srv);migratePref();saveLocal();
-    cloud="ok";refreshRoot();syncChanged();push()})
-  .catch(()=>{cloud="err";syncChanged()});
-  call("getNotebook").then(txt=>{let rows=[];try{rows=JSON.parse(txt||"[]")}catch(e){}
-    setNotebook(rows);try{localStorage.setItem("maya-nb-cache",JSON.stringify(rows))}catch(e){}
+    S=merge(S,srv);migratePref();saveLocal();PULLED_AT=Date.now();
+    cloud="ok";refreshRoot();syncChanged()})
+  .catch(e=>{cloud="err";syncChanged();throw e}).finally(()=>{PULLING=null});
+  return PULLING}
+function pull(){if(!GAS)return;
+  pullState().then(push,retryLater);
+  call("getNotebook").then(txt=>{let rows=null;try{rows=JSON.parse(txt||"null")}catch(e){}
+    if(Array.isArray(rows)&&rows.length){setNotebook(rows);try{localStorage.setItem("maya-nb-cache",JSON.stringify(rows))}catch(e){}}
+    else if(!DECKS.nb.items.length)NB_STATE=Array.isArray(rows)?"empty":"err";
     refreshRoot()}).catch(()=>{if(!DECKS.nb.items.length){NB_STATE="err";refreshRoot()}});
   loadTextbook();loadCorrections();
 }
@@ -593,7 +606,9 @@ function loadTextbook(){if(!GAS)return Promise.resolve();
 function loadCorrections(){if(!GAS)return Promise.resolve();
   return call("getCorrections").then(txt=>{let c=[];try{c=JSON.parse(txt||"[]")}catch(e){}
     CORR=(Array.isArray(c)?c:[]).map(x=>Object.assign({},x,{num:String(x.num||"").replace(/^'/,"")}));try{localStorage.setItem("maya-corr-cache",JSON.stringify(CORR))}catch(e){}refreshRoot()}).catch(()=>{})}
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden"&&pushTimer)push()});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden"&&pushTimer)push();
+  else if(document.visibilityState==="visible"&&GAS&&PULLED_AT&&Date.now()-PULLED_AT>PULL_AGE)pullState().catch(retryLater)});
+window.addEventListener("online",()=>{if(GAS&&(retryTimer||cloud==="err"))push()});
 
 /* ---------- progress per word ---------- */
 const key=(d,id)=>DECKS[d]&&DECKS[d].mix?id:d+":"+id;
