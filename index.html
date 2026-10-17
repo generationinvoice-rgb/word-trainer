@@ -1100,6 +1100,12 @@ function startAdd(){Object.assign(ADD,{src:null,img:null,rows:[],sec:null,editSe
 const lc=s=>String(s||"").trim().toLowerCase();
 const pairTxt=(a,b)=>b?a+" – "+b:a;
 const baseNum=id=>String(parseInt(id,10)||"");
+/* notebook numbers: one rule for what is typed or read, the same as numKey_ on the server (digits and an optional letter: 240, 240a).
+   "#240", "240.", "240 a", " 240A " become 240 / 240a; anything else stays as typed and must be changed */
+const NUM_RE=/^(\d+)([a-z]*)$/;
+function normNum(v){const t=String(v==null?"":v).trim().replace(/^#\s*/,"").replace(/\.+$/,"").trim();
+  const m=t.match(/^(\d+)\s*([a-z]*)$/i);return m?String(parseInt(m[1],10))+m[2].toLowerCase():t}
+function numBad(t){if(!t)return "";const m=t.match(NUM_RE);if(/^-\s*\d/.test(t)||m&&!(parseInt(m[1],10)>0))return "zero";return m?"":"format"}
 function readPhoto(file){return new Promise((res,rej)=>{
   const url=URL.createObjectURL(file);const img=new Image();
   img.onload=()=>{try{const M=1600;let w=img.naturalWidth,h=img.naturalHeight;const k=Math.min(1,M/Math.max(w,h));w=Math.round(w*k);h=Math.round(h*k);
@@ -1152,7 +1158,7 @@ function runExtract(){const tok=++ADD.token;ADD.busy=true;
   .catch(()=>{if(tok!==ADD.token)return;ADD.busy=false;ADD.err="Something went wrong. Check the connection and try again.";render()})}
 function prepareRows(r){
   if(ADD.src==="nb"){
-    ADD.rows=r.notebook.entries.map(e=>({kind:"nb",num:e.num||"",en:e.en||"",bg:e.bg||"",wen:e.written_en||e.en||"",wbg:e.written_bg||"",
+    ADD.rows=r.notebook.entries.map(e=>({kind:"nb",num:normNum(e.num),en:e.en||"",bg:e.bg||"",wen:e.written_en||e.en||"",wbg:e.written_bg||"",
       status:e.status,note:e.note||"",options:(e.options||[]).filter(o=>o.en),resolved:e.status==="ok"||e.status==="fixed"}));
     ADD.rows.forEach(x=>{if(x.status==="choose"&&x.options.length<2)x.resolved=true});
     ADD.sec=null;
@@ -1170,21 +1176,25 @@ function prepareRows(r){
 const lessonDeck=(unit,lesson)=>{const id="L"+lesson;return lesson&&DECKS[id]&&DECKS[id].unit===String(unit)?id:null};
 /* same rules as saveNotebookWords: the same word under the same main number is already in the notebook (skipped);
    a number that belongs to another word is "used" and must be changed before Save (#230, or #23 next to 23a/23b) */
-function nbDup(r){const all=nbAll();let b=baseNum(r.num);
-  if(!String(r.num).trim()){const i=ADD.rows.indexOf(r);for(let k=i-1;k>=0;k--){const n=baseNum(ADD.rows[k].num);if(n){b=n;break}}}
+function nbDup(r){const all=nbAll();const t=normNum(r.num);let b=baseNum(t);
+  if(!t){const i=ADD.rows.indexOf(r);for(let k=i-1;k>=0;k--){const n=baseNum(normNum(ADD.rows[k].num));if(n){b=n;break}}}
   return all.find(x=>b&&baseNum(x.id)===b&&lc(x.en)===lc(r.en))||null}
-function nbUsed(r){const t=String(r.num||"").trim();if(!t)return null;const all=nbAll();
+function nbUsed(r){const t=normNum(r.num);if(!t)return null;const all=nbAll();
   return all.find(x=>x.id===t)||(/^\d+$/.test(t)&&all.find(x=>baseNum(x.id)===t))||null}
 function unitWords(unit){const u=unitOf(unit);const s=new Set();if(!u)return s;
   u.sets.forEach(d=>DECKS[d].items.forEach(it=>[it.en,it.opp,it.label,it.base].forEach(v=>{if(v)s.add(lc(v))})));return s}
 function rowState(r,uw){
-  if(r.kind==="nb"){const dup=r.en.trim()?nbDup(r):null;const used=r.en.trim()&&!dup?nbUsed(r):null;
-    return{dup,used,block:!!used||!dup&&(r.status==="choose"||r.status==="unreadable")&&!r.resolved,save:!!r.en.trim()&&!dup&&!used}}
+  if(r.kind==="nb"){const en=!!r.en.trim();const t=normNum(r.num);const bad=en?numBad(t):"";
+    const dup=en&&!bad?nbDup(r):null;const used=en&&!bad&&!dup?nbUsed(r):null;
+    /* two new words with the same number on this page: the server would keep only the first */
+    const twice=!!(en&&t&&!bad&&!dup&&!used&&ADD.rows.some(x=>x!==r&&x.kind==="nb"&&x.en.trim()&&normNum(x.num)===t&&!nbDup(x)));
+    const fix=!!(bad||used||twice);
+    return{dup,used,bad,twice,fix,block:fix||!dup&&(r.status==="choose"||r.status==="unreadable")&&!r.resolved,save:en&&!dup&&!fix}}
   const dup=uw&&uw.has(lc(r.en));return{dup,block:false,save:r.keep&&!!r.en.trim()&&!dup}}
 const secOk=()=>!!(ADD.sec&&ADD.sec.unit&&ADD.sec.lesson&&new RegExp("^"+ADD.sec.unit+"\\.\\d+$").test(ADD.sec.lesson));
 /* new notebook numbers must follow the notebook (same rule as saveNotebookWords on the server) */
 function nbNumCheck(states){const last=nbLastNum();let top=last;
-  for(let i=0;i<ADD.rows.length;i++){const r=ADD.rows[i];if(!states[i].save)continue;const t=String(r.num||"").trim();if(!t)continue;
+  for(let i=0;i<ADD.rows.length;i++){const r=ADD.rows[i];if(!states[i].save)continue;const t=normNum(r.num);if(!t)continue;
     const b=parseInt(t,10);if(!(b>0)||b>top+NUM_JUMP)return{last:String(last),first:t};top=Math.max(top,b)}
   return null}
 
@@ -1214,7 +1224,10 @@ function rowHtml(r,i,uw,ro){const stt=rowState(r,uw);const dis=ro?" disabled":""
   const wrote=pairTxt(r.wen,lc(r.wbg)!==lc(r.bg)||!r.bg?r.wbg:"");
   let note="";
   if(stt.dup)note=`<div class="note info">${icon("alert")}<span>Already in your notebook as #${esc(stt.dup.id)} ${esc(stt.dup.en)}. It will not be added again.</span></div>`;
-  else if(stt.used)note=`<div class="note">${icon("alert")}<span>#${esc(String(r.num).trim())} is already used for “${esc(stt.used.en)}”. Change the number.</span></div>`;
+  else if(stt.bad==="zero")note=`<div class="note">${icon("alert")}<span>Numbers start at 1. Change the number.</span></div>`;
+  else if(stt.bad)note=`<div class="note">${icon("alert")}<span>“${esc(normNum(r.num))}” is not a notebook number. Use a number like 240 or 240a.</span></div>`;
+  else if(stt.used)note=`<div class="note">${icon("alert")}<span>#${esc(normNum(r.num))} is already used for “${esc(stt.used.en)}”. Change the number.</span></div>`;
+  else if(stt.twice)note=`<div class="note">${icon("alert")}<span>This number is used twice on this page. Change one of them.</span></div>`;
   else if(r.status==="choose"&&!r.resolved)note=`<div class="note">${icon("alert")}<span>${esc(r.note||"Which one is right?")} You wrote “${esc(pairTxt(r.wen,r.wbg))}”.</span></div>
     <div class="opts2">${r.options.slice(0,2).map((o,k)=>`<button class="chip" data-opt="${k}">${esc(pairTxt(o.en,o.bg))}</button>`).join("")}<button class="chip" data-opt="both">Both</button></div>`;
   else if(r.status==="unreadable"&&!r.resolved)note=`<div class="note">${icon("alert")}<span>${esc(r.note||"We couldn't read all of it.")}</span><button class="textbtn" data-okrow>Looks right</button></div>`;
@@ -1283,7 +1296,8 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
       $("#reread").onclick=()=>{ADD.force=nb?"force-textbook":"force-notebook";ADD.err="";ADD.errKind="";ADD.busy=false;replace("addReading")};
       $$("[data-row]").forEach(row=>{const i=+row.dataset.row;const r=ADD.rows[i];
         row.querySelectorAll("[data-f]").forEach(inp=>{inp.oninput=()=>{r[inp.dataset.f]=inp.value};
-          inp.onchange=()=>{if(r.kind==="nb"&&r.status==="unreadable"&&!r.resolved&&r.en.trim()&&r.bg.trim())r.resolved=true;ADD.numErr=null;keep(render)}});
+          inp.onchange=()=>{if(inp.dataset.f==="num")r.num=normNum(inp.value);
+            if(r.kind==="nb"&&r.status==="unreadable"&&!r.resolved&&r.en.trim()&&r.bg.trim())r.resolved=true;ADD.numErr=null;keep(render)}});
         row.querySelector("[data-del]").onclick=()=>{ADD.rows.splice(i,1);ADD.numErr=null;keep(render)};
         const kp=row.querySelector("[data-keep]");if(kp)kp.onclick=()=>{r.keep=!r.keep;keep(render)};
         const ok=row.querySelector("[data-okrow]");if(ok)ok.onclick=()=>{r.resolved=true;keep(render)};
@@ -1319,11 +1333,11 @@ function reloadNotebook(){return call("getNotebook").then(t2=>{let rws=[];try{rw
 function doSave(){if(ADD.saving)return;
   const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.sec.unit);
   const rows=ADD.rows.filter(r=>rowState(r,uw).save);if(!rows.length)return;
-  const sendRows=nb?ADD.rows.filter(r=>r.en.trim()&&!rowState(r,uw).used):rows; /* never send a row whose number is used */
+  const sendRows=nb?ADD.rows.filter(r=>r.en.trim()&&!rowState(r,uw).fix):rows; /* never send a row whose number must be changed */
   ADD.saving=true;keep(render);
   const fail=()=>{ADD.saving=false;toast("Could not save. Check the connection and try again.");if(top_().name==="addReview")keep(render)};
   if(nb){
-    const entries=sendRows.map(r=>({num:String(r.num||"").trim()||null,en:r.en.trim(),bg:r.bg.trim()}));
+    const entries=sendRows.map(r=>({num:normNum(r.num)||null,en:r.en.trim(),bg:r.bg.trim()}));
     const corrections=rows.map(corrFor).filter(Boolean);
     call("saveNotebookWords",JSON.stringify({entries,corrections})).then(txt=>{const res=JSON.parse(txt);
       if(res.error==="numbers"){ADD.saving=false;ADD.numErr={last:res.last,first:res.first};if(top_().name==="addReview")keep(render);return}
@@ -1338,14 +1352,17 @@ function doSave(){if(ADD.saving)return;
 SCREENS.addSaved=()=>{const sv=ADD.saved;const res=sv.res;const n=res.added.length;const nb=sv.kind==="nb";
   const nums=nb?res.added.map(a=>a.num).sort((a,b)=>a.localeCompare(b,"en",{numeric:true})):[];
   const where=nb?(n?"Notebook #"+nums[0]+(n>1?" to #"+nums[nums.length-1]:""):"Notebook"):"Unit "+res.unit+" · "+(ADD.sec.lesson)+" · "+sv.title;
-  const sk=res.skipped.length;const inWhere=nb?"your notebook":"Unit "+res.unit;
+  /* the server says why a notebook word was skipped: "already in the notebook", or its number is used by another word */
+  const sk=nb?res.skipped.filter(x=>!x||!x.reason||x.reason==="already in the notebook").length:res.skipped.length;
+  const other=nb?res.skipped.length-sk:0;const inWhere=nb?"your notebook":"Unit "+res.unit;
   const canUndo=n&&res.batch&&!sv.undone&&Date.now()-sv.at<UNDO_MS;
   return{html:`<div class="wrap" style="padding-top:calc(24px + env(safe-area-inset-top,0px))">
     <div style="text-align:center;display:flex;flex-direction:column;gap:6px"><div class="done-mark">${icon("check")}</div>
     <h1 style="font-size:1.7rem">${n?plural(n,"word")+" added":"No new words"}</h1>
     <p class="muted">${esc(where)}</p>
     ${sk&&n?`<p id="skipline">${sk} ${sk===1?"was":"were"} already in ${inWhere}, so ${sk===1?"it was":"they were"} not added again.</p>`:""}
-    <p class="hint">${n?"They are saved online, on all your devices.":"All the words from this page are already in the app."}</p></div>
+    ${other?`<p id="otherline">${plural(other,"word")} could not be added because ${other===1?"its number is":"their numbers are"} already used.</p>`:""}
+    <p class="hint">${n?"They are saved online, on all your devices.":other?"Fix the numbers and save the page again.":"All the words from this page are already in the app."}</p></div>
     ${canUndo?`<div class="undo"><button class="btn ghost" id="undo">${icon("redo")} Undo</button><span class="hint">You can undo this for 10 minutes.</span></div>`:""}
     ${sv.late?`<p class="hint" id="late">It's too late to undo here. Ask Dad to remove these words.</p>`:""}
     ${nb&&sv.corrections.length?`<section class="field-row"><span class="label">Fix these in your notebook</span><div class="list">${sv.corrections.map(c=>`<div class="rowlink"><div class="fixcard">
