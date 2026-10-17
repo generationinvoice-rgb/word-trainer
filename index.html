@@ -515,7 +515,9 @@ function setTextbook(tb){
     });
     if(!unit.sets.length)return;
     if(!unit.topic)unit.topic=unit.sections[0].title||"";
-    unit.sub=unit.sections.map(s=>s.id).join(", ");
+    /* sections stay oldest first (topic, lessons); Home, Mistakes and Progress show them newest first */
+    unit.view=[...unit.sections].sort((a,b)=>b.id.localeCompare(a.id,"en",{numeric:true}));
+    unit.sub=unit.view.map(s=>s.id).join(", ");
     if(unit.sets.length>=2)decks["unit"+unit.n]={name:"All of Unit "+unit.n,type:"mix",mix:true,unit:unit.n,
       items:unit.sets.flatMap(d=>decks[d].items.map(it=>({id:d+":"+it.id,d,it})))};
     units.push(unit);
@@ -529,6 +531,7 @@ function setTextbook(tb){
 setTextbook(TB_DEFAULT);
 try{const c=JSON.parse(localStorage.getItem("maya-tb-cache")||"null");if(c)setTextbook(c)}catch(e){}
 const realDecks=()=>UNITS.flatMap(u=>u.sets);
+const shownDecks=()=>UNITS.flatMap(u=>u.view.flatMap(s=>s.decks)); /* newest unit and section first */
 const unitOf=n=>UNITS.find(u=>u.n===String(n));
 
 let NB_STATE=GAS?"loading":"none";
@@ -636,7 +639,7 @@ function nbBounds(p){const r=nbRange(p);return r.length?[r[0].num,r[r.length-1].
 function nbLabel(p){if(p.nbLast)return "latest "+p.nbLast;if((+p.nbFrom||1)===1&&!p.nbTo)return "all";const r=nbRange(p);return r.length?"#"+r[0].id+" to #"+r[r.length-1].id:"#"+(p.nbFrom||1)+" to #"+(p.nbTo||"")}
 function deckItems(d,p=S.pref){return d==="nb"?nbRange(p):DECKS[d]?DECKS[d].items:[]}
 function counts(d,items){items=items||deckItems(d);return{total:items.length,learned:items.filter(x=>isLearned(d,x.id)).length,mist:items.filter(x=>isMistake(d,x.id)).length}}
-function allMistakes(){return ["nb",...realDecks()].map(d=>({d,n:DECKS[d].items.filter(x=>isMistake(d,x.id)).length})).filter(x=>x.n)}
+function allMistakes(){return ["nb",...shownDecks()].map(d=>({d,n:DECKS[d].items.filter(x=>isMistake(d,x.id)).length})).filter(x=>x.n)}
 const totalMistakes=()=>allMistakes().reduce((a,x)=>a+x.n,0);
 const totalLearned=()=>["nb",...realDecks()].reduce((a,d)=>a+DECKS[d].items.filter(x=>isLearned(d,x.id)).length,0);
 
@@ -764,7 +767,7 @@ function openDeckSheet(d){
   const draft=Object.assign({},S.pref);
   if(d!=="nb"&&S.pref.deck!==d){/* keep count and flash setting, the range is only for the notebook */}
   const D=DECKS[d];
-  const small=d==="nb"?"Your vocabulary notebook":D.mix?"Focus · "+unitOf(D.unit).sets.map(x=>DECKS[x].name).join(", "):"Unit "+D.unit+" · Focus";
+  const small=d==="nb"?"Your vocabulary notebook":D.mix?"Focus · "+unitOf(D.unit).view.flatMap(s=>s.decks).map(x=>DECKS[x].name).join(", "):"Unit "+D.unit+" · Focus";
   const draw=sh=>{const c=counts(d,D.items);
     sh.querySelector(".sheet-in").innerHTML=`<div class="grab" aria-hidden="true"></div>
       <div class="sheet-head"><div class="txt"><p>${esc(small)}</p><h2>${esc(D.name)}</h2>
@@ -786,9 +789,9 @@ function allTile(u){const d="unit"+u.n;if(!DECKS[d])return "";const c=counts(d,D
     <span class="bar"><i style="width:${pct(c.learned,c.total)}%"></i></span></span>${icon("chev","chev")}</button>`}
 const openUnit=()=>OPEN_UNIT===null?(UNITS[0]?UNITS[0].n:""):OPEN_UNIT;
 function unitBlock(u){const open=openUnit()===u.n;const tot=u.sets.reduce((a,d)=>a+DECKS[d].items.length,0);
-  const grouped=u.sections.length>1;
+  const grouped=u.view.length>1;
   return `<div class="unit"><button class="unit-head" data-unit="${esc(u.n)}" aria-expanded="${open}"><span class="txt"><b>Unit ${esc(u.n)}${u.topic?" · "+esc(u.topic):""}</b><span>${esc(u.sub)} · ${plural(u.sets.length,"set")} · ${plural(tot,"word")}</span></span>${icon("chev","chev")}</button>
-    ${open?`<div class="tiles">${allTile(u)}${u.sections.map(s=>(grouped?`<span class="sec-label">${esc(s.id)}${s.title?" · "+esc(s.title):""}</span>`:"")+s.decks.map(deckTile).join("")).join("")}</div>`:""}</div>`}
+    ${open?`<div class="tiles">${allTile(u)}${u.view.map(s=>(grouped?`<span class="sec-label">${esc(s.id)}${s.title?" · "+esc(s.title):""}</span>`:"")+s.decks.map(deckTile).join("")).join("")}</div>`:""}</div>`}
 function unitsHtml(){const L=UNITS;if(!L.length)return `<p class="hint">The textbook words are not available right now.</p>`;
   const head=L.slice(0,2),older=L.slice(2);if(older.some(u=>u.n===openUnit()))SHOW_OLDER=true;
   return head.map(unitBlock).join("")+(older.length?`<div class="unit"><button class="unit-head" id="older" aria-expanded="${SHOW_OLDER}"><span class="txt"><b style="font-size:1rem">Older units (${older.length})</b><span>Unit ${esc(older[older.length-1].n)} to Unit ${esc(older[0].n)}</span></span>${icon("chev","chev")}</button>
@@ -849,7 +852,7 @@ SCREENS.mistakes.label="Mistakes";
 /* ---------- Progress ---------- */
 SCREENS.progress=()=>{const sk=streak();const days=new Set(S.days);const d0=new Date();
   const wk=Array.from({length:7},(_,i)=>{const d=new Date(d0);d.setDate(d0.getDate()-6+i);return{l:"MTWTFSS"[(d.getDay()+6)%7],on:days.has(ymd(d)),today:i===6}});
-  const decks=["nb",...realDecks()];const log=S.log.slice(-6).reverse();
+  const decks=["nb",...shownDecks()];const log=S.log.slice(-6).reverse();
   return{tab:"progress",html:appbar("Progress",{noBack:true})+`<div class="wrap">
     <div class="stats"><div class="stat"><b>${sk}</b><span>${sk===1?"day":"days"} in a row</span></div><div class="stat"><b>${totalLearned()}</b><span>words learned</span></div>
       <button class="stat bad" id="pm"><b>${totalMistakes()}</b><span>mistakes ›</span></button></div>
