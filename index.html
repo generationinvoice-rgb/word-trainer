@@ -84,6 +84,7 @@ body.has-dock .wrap{padding-bottom:calc(var(--dock-h,120px) + 24px + env(safe-ar
 .btn.warn{background:var(--bad-bg);color:var(--bad)}
 .btn.block{width:100%}
 .btn:disabled{opacity:.5;cursor:default}
+.backbtn:disabled,.iconbtn:disabled,.textbtn:disabled{opacity:.5;cursor:default}
 .btn:active:not(:disabled),.tile:active,.mode:active:not(:disabled),.rowlink:active,.opt:active:not(:disabled),.chip:active{transform:scale(.98)}
 .textbtn{background:none;border:0;color:var(--accent);font-weight:700;padding:10px 0;min-height:44px}
 .iconbtn{background:none;border:0;width:44px;height:44px;display:grid;place-items:center;border-radius:12px;color:var(--muted)}
@@ -1119,7 +1120,7 @@ SCREENS.result.label="Results";
 const ADD={};
 const DAILY_PHOTOS=20, UNDO_MS=10*60000, NUM_JUMP=5;
 function startAdd(){Object.assign(ADD,{src:null,img:null,rows:[],sec:null,editSec:false,err:"",errKind:"",reason:"",force:"",numErr:null,
-  busy:false,saving:false,saved:null,showDups:false,token:(ADD.token||0)+1});go("addPhoto")}
+  busy:false,opening:false,file:"",saving:false,saved:null,showDups:false,token:(ADD.token||0)+1});go("addPhoto")}
 const lc=s=>String(s||"").trim().toLowerCase();
 const pairTxt=(a,b)=>b?a+" – "+b:a;
 const baseNum=id=>String(parseInt(id,10)||"");
@@ -1143,28 +1144,33 @@ SCREENS.addPhoto=()=>({html:appbar("Add words",{backLabel:"Cancel"})+`<div class
     <label class="btn soft block filebtn">${icon("image")} Choose from Photos<input type="file" accept="image/*" id="lib" aria-label="Choose from Photos"></label>
     <p class="hint">One page at a time, in good light. For your notebook, make sure the numbers and both columns are in the photo.</p>
     ${GAS?"":`<p class="hint" style="color:var(--bad)">Adding words works only in the online app.</p>`}</div>`,
-  after(){[$("#cam"),$("#lib")].forEach(inp=>inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;
-    readPhoto(f).then(data=>{ADD.img=data;ADD.err="";ADD.errKind="";ADD.force="";ADD.busy=false;go("addReading")}).catch(()=>toast("This photo could not be opened. Try another one."))})}});
+  /* one read per photo (DEF-37): ignore a change while a photo is opened or read, off this screen, or the same file again in this visit */
+  after(){[$("#cam"),$("#lib")].forEach(inp=>inp.onchange=()=>{const f=inp.files&&inp.files[0];inp.value="";
+    if(!f||ADD.busy||ADD.opening||top_().name!=="addPhoto")return;
+    const key=[f.name,f.size,f.lastModified].join("|");if(key===ADD.file)return;
+    const tok=ADD.token,here=()=>tok===ADD.token&&top_().name==="addPhoto";ADD.opening=true;ADD.file=key;
+    readPhoto(f).then(data=>{ADD.opening=false;if(!here())return;ADD.img=data;ADD.err="";ADD.errKind="";ADD.force="";ADD.busy=false;go("addReading")})
+      .catch(()=>{ADD.opening=false;ADD.file="";if(here())toast("This photo could not be opened. Try another one.")})})}});
 SCREENS.addPhoto.label="Photo";
 
 /* Reading, and the three ways it can end without words: no connection, not a vocabulary page, daily limit */
 SCREENS.addReading=()=>{const k=ADD.errKind;
   const bar=appbar(k?"Add words":"Reading",{backLabel:k==="limit"?"Back":"Cancel",backId:"rdcancel"});
   const photo=`<div class="reading"><img src="${ADD.img}" alt="Your photo">${k?"":'<div class="scan"></div>'}</div>`;
-  const wire=extra=>()=>{$("#rdcancel").onclick=()=>{ADD.token++;ADD.busy=false;ADD.err="";ADD.errKind="";back()};if(extra)extra()};
+  const wire=extra=>()=>{$("#rdcancel").onclick=()=>{ADD.token++;ADD.busy=false;ADD.err="";ADD.errKind="";ADD.file="";back()};if(extra)extra()};
   if(k==="limit")return{html:bar+`<div class="wrap"><div class="msgcard"><div class="done-mark info">${icon("alert")}</div>
       <h1>That's all for today</h1><p class="muted">You can read ${ADD.limit||DAILY_PHOTOS} pages a day. Try again tomorrow.</p></div></div>`,
     dock:`<button class="btn primary block" id="hm">${icon("home")} Home</button>`,after:wire(()=>{$("#hm").onclick=goHome})};
   if(k==="other")return{html:bar+`<div class="wrap"><header class="pagehead"><h1>This is not a vocabulary page</h1>
       <p class="muted" id="reason">${esc(ADD.reason||"We couldn't find words to learn on this photo.")}</p></header>${photo}
       <p class="hint">Take a photo of a page from your notebook or from Focus.</p></div>`,
-    dock:`<button class="btn primary block" id="retry">${icon("camera")} Take another photo</button>`,after:wire(()=>{$("#retry").onclick=()=>{ADD.errKind="";back()}})};
+    dock:`<button class="btn primary block" id="retry">${icon("camera")} Take another photo</button>`,after:wire(()=>{$("#retry").onclick=()=>{ADD.errKind="";ADD.file="";back()}})};
   return{html:bar+`<div class="wrap">
     <header class="pagehead"><h1>${ADD.err?"We couldn't read this page.":"Reading the words..."}</h1></header>
     ${photo}
     <p class="hint" style="text-align:center">${ADD.err?esc(ADD.err):"This can take up to a minute."}</p></div>`,
   dock:ADD.err?`<button class="btn primary block" id="retry">${icon("camera")} Try again</button>`:"",
-  after:wire(()=>{if(ADD.err){$("#retry").onclick=()=>{ADD.err="";back()};return}
+  after:wire(()=>{if(ADD.err){$("#retry").onclick=()=>{ADD.err="";ADD.file="";back()};return}
     if(!ADD.busy)runExtract()})}};
 SCREENS.addReading.label="Photo";
 function runExtract(){const tok=++ADD.token;ADD.busy=true;
@@ -1270,10 +1276,10 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
   const numErr=nb&&!allDup?(nbNumCheck(states)||ADD.numErr):null;
   const label=nb?"Notebook page":"Textbook page";
   const other=nb?"Not a notebook page? Read it as a textbook page":"Not a textbook page? Read it as a notebook page";
-  const wireBack=()=>{$("#rvback").onclick=()=>{if(allDup){back();return}
+  const wireBack=()=>{$("#rvback").onclick=()=>{if(ADD.saving)return;ADD.file="";if(allDup){back();return}
     openSheet(`<div class="sheet-head"><div class="txt"><h2>Discard these words?</h2><p>The words from this photo will not be saved.</p></div></div>
       <div style="display:flex;gap:8px"><button class="btn ghost" id="dy" style="flex:1">Discard</button><button class="btn primary" id="dn" style="flex:1">Keep checking</button></div>`,
-      sh=>{sh.querySelector("#dn").onclick=()=>closeSheet();sh.querySelector("#dy").onclick=()=>{closeSheet(true);back()}})}};
+      sh=>{sh.querySelector("#dn").onclick=()=>closeSheet();sh.querySelector("#dy").onclick=()=>{if(ADD.saving)return;closeSheet(true);back()}})}};
   const dupList=ro=>`<div class="rev">${dupIdx.map(i=>rowHtml(ADD.rows[i],i,uw,ro)).join("")}</div>`;
   /* the whole page is already in the app (#2) */
   if(allDup){
@@ -1289,7 +1295,7 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
       <button class="btn soft block" id="dups">${ADD.showDups?"Hide the words":"Show the words"}</button>
       ${ADD.showDups?dupList(true):""}</div>`,
       dock:`<button class="btn primary block" id="again">${icon("camera")} Take another photo</button><button class="btn ghost block" id="hm" style="min-height:48px">${icon("home")} Home</button>`,
-      after(){wireBack();$("#hm").onclick=goHome;$("#again").onclick=()=>back();
+      after(){wireBack();$("#hm").onclick=goHome;$("#again").onclick=()=>{ADD.file="";back()};
         $("#dups").onclick=()=>{ADD.showDups=!ADD.showDups;keep(render)}}};
   }
   /* textbook words that are not core come unticked: say so, the head counts the new words */
@@ -1319,7 +1325,7 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
     dock:btn,
     after(){
       wireBack();
-      $("#reread").onclick=()=>{ADD.force=nb?"force-textbook":"force-notebook";ADD.err="";ADD.errKind="";ADD.busy=false;replace("addReading")};
+      $("#reread").onclick=()=>{if(ADD.busy||ADD.saving)return;ADD.force=nb?"force-textbook":"force-notebook";ADD.err="";ADD.errKind="";replace("addReading")};
       $$("[data-row]").forEach(row=>{const i=+row.dataset.row;const r=ADD.rows[i];
         row.querySelectorAll("[data-f]").forEach(inp=>{inp.oninput=()=>{r[inp.dataset.f]=inp.value};
           inp.onchange=()=>{if(inp.dataset.f==="num")r.num=normNum(inp.value);
@@ -1343,6 +1349,8 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
         const sd=$("#secdone");if(sd)sd.onclick=()=>{ADD.editSec=false;ADD.sec.low=false;keep(render)}}
       const sv=$("#save");if(sv)sv.onclick=doSave;
       const du=$("#dups");if(du)du.onclick=()=>{ADD.showDups=!ADD.showDups;keep(render)};
+      /* nothing on this screen acts while the words are being saved (DEF-15); a failed save renders it again, enabled */
+      if(ADD.saving)[$("#rvback"),...$$("#app .wrap button,#app .wrap input")].forEach(e=>{if(e)e.disabled=true});
     }}};
 SCREENS.addReview.label="Check";
 
