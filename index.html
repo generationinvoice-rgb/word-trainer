@@ -1142,7 +1142,7 @@ SCREENS.addReading=()=>{const k=ADD.errKind;
   const photo=`<div class="reading"><img src="${ADD.img}" alt="Your photo">${k?"":'<div class="scan"></div>'}</div>`;
   const wire=extra=>()=>{$("#rdcancel").onclick=()=>{ADD.token++;ADD.busy=false;ADD.err="";ADD.errKind="";back()};if(extra)extra()};
   if(k==="limit")return{html:bar+`<div class="wrap"><div class="msgcard"><div class="done-mark info">${icon("alert")}</div>
-      <h1>That's all for today</h1><p class="muted">You can read ${DAILY_PHOTOS} pages a day. Try again tomorrow.</p></div></div>`,
+      <h1>That's all for today</h1><p class="muted">You can read ${ADD.limit||DAILY_PHOTOS} pages a day. Try again tomorrow.</p></div></div>`,
     dock:`<button class="btn primary block" id="hm">${icon("home")} Home</button>`,after:wire(()=>{$("#hm").onclick=goHome})};
   if(k==="other")return{html:bar+`<div class="wrap"><header class="pagehead"><h1>This is not a vocabulary page</h1>
       <p class="muted" id="reason">${esc(ADD.reason||"We couldn't find words to learn on this photo.")}</p></header>${photo}
@@ -1151,7 +1151,7 @@ SCREENS.addReading=()=>{const k=ADD.errKind;
   return{html:bar+`<div class="wrap">
     <header class="pagehead"><h1>${ADD.err?"We couldn't read this page.":"Reading the words..."}</h1></header>
     ${photo}
-    <p class="hint" style="text-align:center">${ADD.err?esc(ADD.err):"This takes about 20 seconds."}</p></div>`,
+    <p class="hint" style="text-align:center">${ADD.err?esc(ADD.err):"This can take up to a minute."}</p></div>`,
   dock:ADD.err?`<button class="btn primary block" id="retry">${icon("camera")} Try again</button>`:"",
   after:wire(()=>{if(ADD.err){$("#retry").onclick=()=>{ADD.err="";back()};return}
     if(!ADD.busy)runExtract()})}};
@@ -1160,7 +1160,7 @@ function runExtract(){const tok=++ADD.token;ADD.busy=true;
   call("extractPage",ADD.img.split(",")[1],"image/jpeg",ADD.force||"").then(txt=>{
     if(tok!==ADD.token)return;ADD.busy=false;
     let r=null;try{r=JSON.parse(txt)}catch(e){}
-    if(r&&r.error==="daily_limit"){ADD.errKind="limit";render();return}
+    if(r&&r.error==="daily_limit"){ADD.errKind="limit";ADD.limit=+r.limit>0?+r.limit:DAILY_PHOTOS;render();return}
     const hasNb=r&&r.notebook&&r.notebook.entries&&r.notebook.entries.length,hasTb=r&&r.textbook&&r.textbook.words&&r.textbook.words.length;
     if(!hasNb&&!hasTb){ADD.errKind="other";ADD.reason=r&&r.page_type==="other"&&r.reason?r.reason:"";render();return}
     const want=ADD.force==="force-textbook"?"tb":ADD.force==="force-notebook"?"nb":"";
@@ -1280,12 +1280,14 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
       after(){wireBack();$("#hm").onclick=goHome;$("#again").onclick=()=>back();
         $("#dups").onclick=()=>{ADD.showDups=!ADD.showDups;keep(render)}}};
   }
+  /* textbook words that are not core come unticked: say so, the head counts the new words */
+  const none=!nb&&!n&&mainIdx.some(i=>!ADD.rows[i].keep&&ADD.rows[i].en.trim());
   let btn;
   if(ADD.saving)btn=`<button class="btn primary block" disabled>Saving...</button>`;
   else if(secBad)btn=`<button class="btn primary block" disabled>Pick the section first</button>`;
   else if(left)btn=`<button class="btn primary block" disabled>Check ${plural(left,"word")} first</button>`;
   else if(numErr)btn=`<button class="btn primary block" disabled>Check the numbers first</button>`;
-  else if(!n)btn=`<button class="btn primary block" disabled>No new words to save</button>`;
+  else if(!n)btn=`<button class="btn primary block" disabled>${none?"Tick the words to add":"No new words to save"}</button>`;
   else btn=`<button class="btn primary block" id="save">${icon("check")} Save ${plural(n,"word")}</button>`;
   const head=dupIdx.length?plural(mainIdx.length,"new word"):plural(ADD.rows.length,"word")+" found";
   const dupLine=dupIdx.length?`<p id="dupline">${dupIdx.length===1?"1 word is":dupIdx.length+" words are"} already in ${where}, so ${dupIdx.length===1?"it":"they"} will not be added again.</p>`:"";
@@ -1294,7 +1296,7 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
   return{html:appbar("Check the words",{backLabel:"Photo",backId:"rvback"})+`<div class="wrap">
     <header class="pagehead"><span class="label">${label}</span><h1>${head}</h1>
       ${dupLine}
-      <p class="muted">${left?`<b style="color:var(--warn)">${left} to check.</b> Choose or fix them, then save.`:nb?"All checked. Fix anything else you see, then save.":"Untick the words you don't need, fix anything you see, then save."}</p>
+      <p class="muted">${left?`<b style="color:var(--warn)">${left} to check.</b> Choose or fix them, then save.`:nb?"All checked. Fix anything else you see, then save.":none?"Tick the words you want to add, then save.":"Untick the words you don't need, fix anything you see, then save."}</p>
       <button class="textbtn" id="reread" style="align-self:flex-start;text-align:left">${other}</button></header>
     ${numCard}
     ${nb?"":secCard()}
@@ -1359,15 +1361,16 @@ function doSave(){if(ADD.saving)return;
   }else{
     const s=ADD.sec;const title=(s.title||"").trim()||"Lesson "+s.lesson;
     const words=rows.map(r=>({en:r.en.trim(),bg:r.bg.trim(),def:r.def||"",pos:r.pos||""}));
+    const dups=ADD.rows.filter(r=>rowState(r,uw).dup).length; /* not sent, so the server cannot count them */
     call("saveTextbookWords",JSON.stringify({unit:s.unit,lesson:s.lesson,title,words})).then(txt=>{const res=JSON.parse(txt);
-      return loadTextbook().then(()=>{ADD.saving=false;ADD.saved={kind:"tb",res,title,at:Date.now()};replace("addSaved")})}).catch(fail);
+      return loadTextbook().then(()=>{ADD.saving=false;ADD.saved={kind:"tb",res,title,dups,at:Date.now()};replace("addSaved")})}).catch(fail);
   }
 }
 SCREENS.addSaved=()=>{const sv=ADD.saved;const res=sv.res;const n=res.added.length;const nb=sv.kind==="nb";
   const nums=nb?res.added.map(a=>a.num).sort((a,b)=>a.localeCompare(b,"en",{numeric:true})):[];
   const where=nb?(n?"Notebook #"+nums[0]+(n>1?" to #"+nums[nums.length-1]:""):"Notebook"):"Unit "+res.unit+" · "+(ADD.sec.lesson)+" · "+sv.title;
   /* the server says why a notebook word was skipped: "already in the notebook", or its number is used by another word */
-  const sk=nb?res.skipped.filter(x=>!x||!x.reason||x.reason==="already in the notebook").length:res.skipped.length;
+  const sk=nb?res.skipped.filter(x=>!x||!x.reason||x.reason==="already in the notebook").length:(sv.dups||0)+res.skipped.length;
   const other=nb?res.skipped.length-sk:0;const inWhere=nb?"your notebook":"Unit "+res.unit;
   const canUndo=n&&res.batch&&!sv.undone&&Date.now()-sv.at<UNDO_MS;
   return{html:`<div class="wrap" style="padding-top:calc(24px + env(safe-area-inset-top,0px))">
