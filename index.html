@@ -1,0 +1,1290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Word Trainer</title>
+<meta name="apple-mobile-web-app-title" content="Word Trainer">
+<meta name="application-name" content="Word Trainer">
+<meta name="theme-color" content="#1F4E8C">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap">
+<style>
+/* Word Trainer v4 (17.10.2026): runs on GitHub Pages (fetch to Apps Script) and inside /exec (google.script.run). v3: Home with hero, tiles and units, bottom sheet for "how", tab bar, Add words. */
+:root{
+  --bg:#EDF1F7; --surface:#FFFFFF; --surface-2:#F5F7FB; --ink:#16233B; --muted:#5B6884; --line:#D3DBE8;
+  --accent:#1F4E8C; --accent-ink:#FFFFFF; --accent-soft:#DCE7F7;
+  --hero:#1F4E8C; --hero-2:#163A6B; --hero-ink:#FFFFFF; --hero-muted:rgba(255,255,255,.78); --hero-chip:rgba(255,255,255,.14);
+  --marker:#FBD55B; --marker-ink:#16233B; --rule:#DCE6F5; --redrule:#E6A3A0;
+  --good:#1D7A4B; --good-bg:#E3F4EA; --bad:#B3372F; --bad-bg:#FBE7E5; --warn:#8A5A00; --warn-bg:#FFF1CC;
+  --scrim:rgba(10,18,34,.45); --shadow:0 10px 30px -16px rgba(22,35,59,.45);
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --body:"Atkinson Hyperlegible","Segoe UI",system-ui,sans-serif;
+  --r:12px; --r-lg:18px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F1626; --surface:#18223A; --surface-2:#1D2945; --ink:#E7ECF6; --muted:#9BA7C0; --line:#2B3756;
+  --accent:#86ADEB; --accent-ink:#0F1626; --accent-soft:#22345A;
+  --hero:#1B3260; --hero-2:#14264A; --hero-ink:#F1F5FC; --hero-muted:rgba(241,245,252,.75); --hero-chip:rgba(255,255,255,.10);
+  --marker:#E9BC3A; --marker-ink:#16233B; --rule:#222E4A; --redrule:#6E3B44;
+  --good:#58C892; --good-bg:#16352A; --bad:#F2857A; --bad-bg:#3A1F24; --warn:#F0C25A; --warn-bg:#3A3018;
+  --scrim:rgba(0,0,0,.6); --shadow:0 10px 30px -14px rgba(0,0,0,.7); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F1626; --surface:#18223A; --surface-2:#1D2945; --ink:#E7ECF6; --muted:#9BA7C0; --line:#2B3756;
+  --accent:#86ADEB; --accent-ink:#0F1626; --accent-soft:#22345A;
+  --hero:#1B3260; --hero-2:#14264A; --hero-ink:#F1F5FC; --hero-muted:rgba(241,245,252,.75); --hero-chip:rgba(255,255,255,.10);
+  --marker:#E9BC3A; --marker-ink:#16233B; --rule:#222E4A; --redrule:#6E3B44;
+  --good:#58C892; --good-bg:#16352A; --bad:#F2857A; --bad-bg:#3A1F24; --warn:#F0C25A; --warn-bg:#3A3018;
+  --scrim:rgba(0,0,0,.6); --shadow:0 10px 30px -14px rgba(0,0,0,.7); color-scheme:dark}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45;min-height:100vh}
+button{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+h1,h2,h3{margin:0;font-family:var(--display);text-wrap:balance}
+p{margin:0}
+.muted{color:var(--muted)}
+svg.i{width:22px;height:22px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.wrap{max-width:560px;margin:0 auto;padding:16px 16px 32px;display:flex;flex-direction:column;gap:18px}
+body.has-tabs:not(.has-dock) .wrap{padding-bottom:calc(86px + env(safe-area-inset-bottom,0px))}
+body.has-dock .wrap{padding-bottom:calc(var(--dock-h,120px) + 24px + env(safe-area-inset-bottom,0px))}
+.label{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+
+/* Home hero (only Home) */
+.hero{background:linear-gradient(160deg,var(--hero),var(--hero-2));color:var(--hero-ink);
+  padding:calc(18px + env(safe-area-inset-top,0px)) 16px 22px;border-radius:0 0 26px 26px}
+.hero-in{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.hero .eyebrow{font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--hero-muted);font-weight:700}
+.hero h1{font-size:1.9rem;font-weight:800;line-height:1.05;letter-spacing:-.01em}
+.hero-stats{display:flex;gap:8px;flex-wrap:wrap}
+.hchip{display:inline-flex;align-items:center;gap:6px;background:var(--hero-chip);border-radius:999px;padding:6px 12px;font-size:.9rem;font-weight:700}
+.hchip svg.i{width:18px;height:18px}
+.hero .hint{color:var(--hero-muted)}
+
+/* App bar (inner screens) */
+.appbar{position:sticky;top:0;z-index:4;background:var(--bg);border-bottom:1px solid var(--line);padding:calc(6px + env(safe-area-inset-top,0px)) 8px 6px}
+.appbar-in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:minmax(88px,1fr) auto minmax(88px,1fr);align-items:center;min-height:44px}
+.appbar h2{font-size:1.05rem;font-weight:700;text-align:center;font-family:var(--body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.backbtn{justify-self:start;display:inline-flex;align-items:center;gap:2px;background:none;border:0;color:var(--accent);font-weight:700;min-height:44px;padding:0 8px 0 2px;font-size:1rem}
+.backbtn svg.i{width:24px;height:24px}
+.pagehead{display:flex;flex-direction:column;gap:4px}
+.pagehead h1{font-size:1.6rem;font-weight:800;line-height:1.1}
+
+/* Buttons */
+.btn{border:0;border-radius:var(--r);padding:14px 18px;font-weight:700;font-size:1.05rem;min-height:54px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent;border:1.5px solid var(--line)}
+.btn.soft{background:var(--surface);border:1.5px solid var(--line)}
+.btn.warn{background:var(--bad-bg);color:var(--bad)}
+.btn.block{width:100%}
+.btn:disabled{opacity:.5;cursor:default}
+.btn:active:not(:disabled),.tile:active,.mode:active:not(:disabled),.rowlink:active,.opt:active:not(:disabled),.chip:active{transform:scale(.98)}
+.textbtn{background:none;border:0;color:var(--accent);font-weight:700;padding:10px 0;min-height:44px}
+.iconbtn{background:none;border:0;width:44px;height:44px;display:grid;place-items:center;border-radius:12px;color:var(--muted)}
+
+/* Dock */
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--bg);border-top:1px solid var(--line);
+  padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 24px -18px rgba(22,35,59,.5)}
+.dock-in{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+.dock .row{display:flex;gap:8px}.dock .row>.btn{flex:1}
+body.has-tabs .dock{bottom:calc(62px + env(safe-area-inset-bottom,0px));padding-bottom:10px}
+.cont{display:flex;align-items:center;gap:12px}
+.cont .txt{flex:1;min-width:0;background:none;border:0;text-align:left;padding:0}
+.cont .txt b{display:block;font-size:.98rem;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cont .txt span{display:block;color:var(--muted);font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cont .btn{flex:none;padding-inline:20px}
+
+/* Tab bar */
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:7;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+.tabbar-in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);height:62px}
+.tab{background:none;border:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:.75rem;font-weight:700;color:var(--muted)}
+.tab[aria-current="page"]{color:var(--accent)}
+.tab .badge{position:absolute;top:-6px;left:14px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--bad);color:var(--surface);font-size:.68rem;line-height:18px;text-align:center}
+.tab .plus{width:40px;height:30px;border-radius:10px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center}
+
+/* Cards, tiles, rows */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px 16px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px;text-align:left;display:flex;flex-direction:column;gap:6px;min-height:104px;min-width:0}
+.tile.wide{grid-column:1/-1;flex-direction:row;align-items:center;gap:14px;min-height:84px}
+.tile .t{font-family:var(--display);font-weight:800;font-size:1.15rem;line-height:1.15;overflow-wrap:anywhere}
+.tile .s{color:var(--muted);font-size:.85rem}
+.tile .s.bad{color:var(--bad);font-weight:700;margin-top:-4px}
+.tile .ic{width:44px;height:44px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:none}
+.tile .col{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.tile[disabled]{opacity:.55;cursor:default}
+.sec-label{grid-column:1/-1;font-size:.78rem;font-weight:700;color:var(--muted);margin-top:4px}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:auto}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:3px;transition:width .3s}
+.list{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden}
+.rowlink{display:flex;align-items:center;gap:12px;width:100%;background:none;border:0;border-bottom:1px solid var(--line);padding:14px;text-align:left;min-height:64px}
+.rowlink:last-child{border-bottom:0}
+.rowlink .txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.rowlink .txt b{font-size:1.02rem}
+.rowlink .txt span{font-size:.85rem;color:var(--muted)}
+.rowlink .chev,.tile .chev{color:var(--muted)}
+.mic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--bad-bg);color:var(--bad);flex:none}
+.count-bad{background:var(--bad-bg);color:var(--bad);font-weight:700;border-radius:999px;padding:2px 9px;font-size:.85rem;white-space:nowrap}
+.fixline{display:flex;align-items:center;gap:10px;width:100%;background:var(--warn-bg);color:var(--warn);border:0;border-radius:var(--r);padding:10px 12px;font-weight:700;text-align:left;min-height:44px}
+.fixline span{flex:1}
+.unit{display:flex;flex-direction:column;gap:10px}
+.unit-head{display:flex;align-items:center;gap:10px;background:none;border:0;padding:4px 0;width:100%;text-align:left;min-height:44px}
+.unit-head .txt{flex:1;min-width:0}
+.unit-head b{font-family:var(--display);font-size:1.1rem;font-weight:800;display:block}
+.unit-head span{color:var(--muted);font-size:.85rem}
+.unit-head .chev{transition:transform .2s;color:var(--muted)}
+.unit-head[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.older{display:flex;flex-direction:column;gap:6px;padding-left:12px;border-left:2px solid var(--line)}
+.section-title{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.field-row{display:flex;flex-direction:column;gap:8px}
+.hint{font-size:.85rem;color:var(--muted)}
+.hint b{color:var(--ink)}
+.note-line{font-size:.88rem;color:var(--muted)}
+
+/* Choosers */
+.seg{display:grid;grid-template-columns:repeat(var(--cols,3),minmax(0,1fr));background:var(--line);border-radius:var(--r);padding:3px;gap:3px}
+.seg button{border:0;background:transparent;border-radius:calc(var(--r) - 3px);min-height:42px;font-weight:700;color:var(--muted);font-size:.95rem;padding:4px 6px}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(22,35,59,.18)}
+.seg.small button{min-height:36px;font-size:.85rem}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 14px;min-height:44px;font-weight:700;font-size:.95rem}
+.chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent);color:var(--accent-ink)}
+.range{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:8px;align-items:center;border-radius:var(--r);padding:8px 10px;border:1.5px solid var(--line);background:var(--surface)}
+.range.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.range label{font-size:.9rem;color:var(--muted);font-weight:700}
+.range input,.field{min-width:0;font:inherit;font-size:1.1rem;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--ink);font-variant-numeric:tabular-nums}
+.range:not(.on) input{color:var(--muted)}
+.field{width:100%;font-size:1rem;padding:12px 14px}
+
+/* Mode buttons */
+.modes{display:flex;flex-direction:column;gap:10px}
+.mode{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--surface);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:12px 14px;min-height:72px}
+.mode:disabled{opacity:.5;cursor:default}
+.mode .ic{width:46px;height:46px;border-radius:14px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:none}
+.mode .txt{flex:1;min-width:0}
+.mode .txt b{display:block;font-size:1.08rem;line-height:1.2}
+.mode .txt span{display:block;font-size:.85rem;color:var(--muted)}
+.mode .go{color:var(--accent)}
+.mode.last{border-color:var(--accent)}
+.mode .tag{font-size:.7rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--accent)}
+.flashopt{display:flex;align-items:center;gap:10px;margin:-2px 4px 2px 64px;font-size:.85rem;color:var(--muted)}
+.flashopt .seg{flex:1;--cols:2}
+
+/* Bottom sheet */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:20;opacity:0;transition:opacity .2s}
+.scrim.on{opacity:1}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--bg);border-radius:22px 22px 0 0;max-height:90vh;overflow:auto;overscroll-behavior:contain;
+  padding:8px 16px calc(18px + env(safe-area-inset-bottom,0px));transform:translateY(100%);transition:transform .25s ease;box-shadow:var(--shadow)}
+.sheet.on{transform:none}
+.sheet-in{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 0}
+.sheet-head{display:flex;align-items:flex-start;gap:10px}
+.sheet-head .txt{flex:1;min-width:0}
+.sheet-head h2{font-size:1.45rem;font-weight:800;line-height:1.15}
+.sheet-head p{color:var(--muted);font-size:.9rem}
+
+/* Quiz: the index card, kept from the previous version */
+.qtop{display:flex;align-items:center;gap:12px}
+.qtop .bar{flex:1;margin:0}
+.qtop .backbtn{color:var(--muted)}
+.qcount{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.9rem;min-width:3.5em;text-align:right}
+.qcard{border-radius:8px;border:1px solid var(--line);padding:12px 16px 18px;min-height:180px;display:flex;flex-direction:column;gap:12px;
+  background:linear-gradient(to bottom,transparent 44px,var(--redrule) 44px,var(--redrule) 46px,transparent 46px),repeating-linear-gradient(to bottom,transparent 0 31px,var(--rule) 31px 32px),var(--surface);
+  background-position:0 0,0 46px,0 0;box-shadow:0 1px 0 var(--line),0 8px 20px -12px rgba(22,35,59,.35)}
+.qcard.tappable{cursor:pointer}
+.qcard .ask{font-size:.85rem;color:var(--muted);height:20px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.qcard .tap-hint{font-size:.85rem;color:var(--muted);margin-top:auto}
+.prompt{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px}
+.big{font-family:var(--display);font-size:clamp(1.7rem,7vw,2.4rem);font-weight:800;line-height:1.15;overflow-wrap:anywhere}
+.big.sentence{font-family:var(--body);font-weight:700;font-size:clamp(1.25rem,5vw,1.5rem)}
+.gap{display:inline-block;min-width:3.2em;border-bottom:3px solid var(--accent);text-align:center}
+.def{margin:0;font-size:1rem}
+.hint-btn{background:none;border:0;padding:0;color:var(--accent);font-weight:700;font-size:.9rem;text-decoration:underline;text-underline-offset:3px;align-self:flex-start}
+.say{border:1.5px solid var(--line);background:var(--surface);color:var(--accent);border-radius:999px;width:44px;height:44px;display:inline-grid;place-items:center;flex:none}
+.say svg.i{width:22px;height:22px}
+mark{background:linear-gradient(transparent 12%,var(--marker) 12%,var(--marker) 88%,transparent 88%);color:var(--marker-ink);padding:0 .15em;border-radius:2px}
+.back{border-top:1px dashed var(--line);padding-top:12px;display:flex;flex-direction:column;gap:6px}
+.opts{display:grid;grid-template-columns:1fr;gap:8px}
+@media (min-width:520px){.opts.short{grid-template-columns:1fr 1fr}}
+.opt{text-align:left;background:var(--surface);border:1.5px solid var(--line);border-radius:var(--r);padding:12px 14px;min-height:56px;font-size:1.02rem;display:flex;gap:10px;align-items:center}
+.opt kbd{font-family:var(--body);font-size:.75rem;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px;flex:none}
+@media (hover:none){.opt kbd{display:none}}
+.opt.right{border-color:var(--good);background:var(--good-bg);color:var(--good);font-weight:700}
+.opt.wrong{border-color:var(--bad);background:var(--bad-bg);color:var(--bad)}
+.opt:disabled{cursor:default}
+.typebox{display:flex;gap:8px}
+.typebox input{flex:1;min-width:0;font:inherit;font-size:1.25rem;padding:12px 14px;min-height:56px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink)}
+.typebox input.right{border-color:var(--good)} .typebox input.wrong{border-color:var(--bad)}
+.typebox .btn{padding-inline:16px}
+.fb{border-radius:var(--r);padding:8px 12px;display:flex;flex-direction:column;gap:2px}
+.fb.ok{background:var(--good-bg);color:var(--good)}
+.fb.no{background:var(--bad-bg);color:var(--bad)}
+.fb strong{font-size:1.05rem}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.score{font-family:var(--display);font-size:3.2rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.words{display:flex;flex-wrap:wrap;gap:6px;padding:0;margin:0;list-style:none}
+.words li{background:var(--bad-bg);color:var(--bad);border-radius:6px;padding:3px 9px;font-weight:700}
+textarea{width:100%;font:inherit;font-size:.9rem;padding:10px 12px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);resize:vertical}
+@media (max-width:360px){.big{font-size:1.55rem}.qcard{min-height:150px}}
+
+/* Progress */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;text-align:left;font:inherit;color:inherit}
+.stat b{display:block;font-family:var(--display);font-size:1.5rem;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat span{font-size:.8rem;color:var(--muted)}
+.stat.bad{color:var(--bad);background:var(--bad-bg);border-color:transparent}
+.stat.bad span{color:inherit}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center;font-size:.75rem;color:var(--muted);margin-top:8px}
+.week i{display:block;width:30px;height:30px;margin:4px auto 0;border-radius:50%;border:1.5px solid var(--line)}
+.week i.on{background:var(--accent);border-color:var(--accent)}
+.week i.today{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--accent)}
+.deckbar{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.deckbar:last-child{border-bottom:0}
+.deckbar .bar{grid-column:1/-1}
+.deckbar span{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.9rem}
+.log{list-style:none;margin:0;padding:0}
+.log li{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:.92rem}
+.log li:last-child{border-bottom:0}
+.log li b{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* Add words */
+.src{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--surface);border:1.5px solid var(--line);border-radius:var(--r-lg);padding:16px;min-height:88px}
+.src[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.src .ic{width:50px;height:50px;border-radius:14px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:none}
+.src b{display:block;font-size:1.1rem}.src span{color:var(--muted);font-size:.88rem}
+.camera{position:relative;border:2px dashed var(--line);border-radius:var(--r-lg);background:var(--surface);min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px;width:100%;overflow:hidden}
+.camera .ic{width:72px;height:72px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center}
+.camera .ic svg.i{width:34px;height:34px}
+.filebtn{position:relative;overflow:hidden}
+.filebtn input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;font-size:0}
+.reading{position:relative;border-radius:var(--r-lg);overflow:hidden;border:1px solid var(--line);max-height:340px;background:var(--surface)}
+.reading img{display:block;width:100%;height:340px;object-fit:cover;object-position:top;opacity:.85}
+.reading .scan{position:absolute;left:0;right:0;height:60px;background:linear-gradient(transparent,rgba(31,78,140,.4),transparent);animation:scan 1.6s linear infinite}
+@keyframes scan{from{top:-60px}to{top:340px}}
+.goes{display:flex;align-items:center;gap:12px}
+.goes .txt{flex:1;min-width:0}
+.goes b{display:block;font-size:1.05rem}
+.rev{display:flex;flex-direction:column;gap:8px}
+.wrow{display:grid;grid-template-columns:66px 1fr 40px;gap:6px 8px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:8px}
+.wrow.tb{grid-template-columns:44px 1fr 40px}
+.wrow input[type="text"],.wrow input:not([type]){min-width:0;width:100%;font:inherit;font-size:1rem;padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;background:var(--surface-2);color:var(--ink)}
+.wrow .num{font-variant-numeric:tabular-nums;text-align:center;padding:8px 2px}
+.wrow .pair{display:flex;flex-direction:column;gap:6px;min-width:0}
+.wrow.flag{border-color:var(--warn);background:var(--warn-bg)}
+.wrow.off{opacity:.55}
+.wrow .note{grid-column:1/-1;display:flex;align-items:center;flex-wrap:wrap;gap:8px;color:var(--warn);font-size:.88rem;font-weight:700}
+.wrow .note.info{color:var(--muted);font-weight:400}
+.wrow .note span{flex:1;min-width:60%}
+.wrow .note .textbtn{white-space:nowrap;padding:4px 12px;min-height:36px;border:1.5px solid var(--warn);border-radius:999px;color:var(--warn)}
+.wrow .opts2{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
+.wrow .opts2 .chip{min-height:40px;padding:6px 12px;font-size:.9rem}
+.check{width:40px;height:40px;display:grid;place-items:center;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);color:var(--accent);padding:0}
+.check[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.done-mark{width:84px;height:84px;border-radius:50%;background:var(--good-bg);color:var(--good);display:grid;place-items:center;margin:24px auto 0}
+.done-mark svg.i{width:44px;height:44px;stroke-width:2.6}
+.fixcard{display:flex;flex-direction:column;gap:6px}
+.fixcard .nr{font-family:var(--display);font-weight:800;font-size:1.1rem}
+.fixcard s{color:var(--bad)}
+.fixcard .ok{color:var(--good);font-weight:700}
+.fixrow{display:flex;align-items:flex-start;gap:12px}
+.fixrow .fixcard{flex:1;min-width:0}
+.toast{position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:700;z-index:50;font-size:.92rem;max-width:90vw;text-align:center}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="dock" id="dock" hidden></div>
+<script>
+/* ---------- where the server is (v4) ----------
+   Two places, one file: on GitHub Pages the page calls Apps Script with fetch (doPost);
+   inside Google's /exec it uses google.script.run. The script id, the key and the name come from
+   the link (#s=...&k=...&n=...) and are kept on the device; they are never part of the code. */
+const GSR=(typeof google!=="undefined"&&google.script&&google.script.run)?google.script.run:null;
+const CFG=(function(){let c={};try{c=JSON.parse(localStorage.getItem("maya-cfg")||"{}")||{}}catch(e){c={}}
+  try{const h=new URLSearchParams(location.hash.slice(1));let ch=false;
+    ["s","k","n"].forEach(x=>{const v=h.get(x);if(v!==null&&v!==c[x]){c[x]=v;ch=true}});
+    if(ch)localStorage.setItem("maya-cfg",JSON.stringify(c))}catch(e){}
+  return c})();
+const API_URL=!GSR&&/^AKfyc[\w-]{20,}$/.test(CFG.s||"")&&CFG.k?"https://script.google.com/macros/s/"+CFG.s+"/exec":"";
+const GAS=!!(GSR||API_URL); /* true = there is a server (either way) */
+const NAME=String(CFG.n||"").trim().slice(0,30);
+/* ---------- built-in textbook (Unit 1), used until textbook.json arrives ---------- */
+const TB_DEFAULT={"version":1,"updated":"2026-10-17T14:49:24.921Z","units":[{"id":"1","title":"Unit 1","topic":"Personality","sections":[{"id":"1.1-1.2","lessons":["1.1","1.2"],"title":"Personality","decks":[{"id":"words","name":"Personality","type":"vocab","items":[{"id":"absent-minded","en":"absent-minded","bg":"разсеян","def":"often forgets things because they are thinking about something else"},
+{"id":"arrogant","en":"arrogant","bg":"арогантен, надменен","def":"believes they are better or more important than other people"},
+{"id":"bad-tempered","en":"bad-tempered","bg":"сприхав, избухлив, кисел","def":"gets angry or annoyed very easily"},
+{"id":"boastful","en":"boastful","bg":"самохвален, хвалипръцко","def":"talks too proudly about themselves and the things they have or do"},
+{"id":"brave","en":"brave","bg":"смел","def":"is not afraid of danger, pain or difficult situations"},
+{"id":"caring","en":"caring","bg":"грижовен","def":"is kind and likes to look after other people"},
+{"id":"cheerful","en":"cheerful","bg":"весел, жизнерадостен","def":"is happy and positive; smiles and laughs a lot"},
+{"id":"clumsy","en":"clumsy","bg":"непохватен, тромав","def":"often drops, breaks or bumps into things"},
+{"id":"confident","en":"confident","bg":"уверен (в себе си)","def":"believes in their own abilities; is not nervous with people"},
+{"id":"crafty","en":"crafty","bg":"хитър, лукав","def":"is clever at getting what they want, often by tricking others"},
+{"id":"crazy","en":"crazy","bg":"луд, налудничав","def":"behaves in a strange, wild or not very sensible way"},
+{"id":"dishonest","en":"dishonest","bg":"нечестен","def":"tells lies, cheats or steals"},
+{"id":"dull","en":"dull","bg":"скучен, еднообразен","def":"is not interesting or exciting at all"},
+{"id":"easy-going","en":"easy-going","bg":"спокоен, лежерен, ведър","def":"is relaxed and calm; does not worry or get upset easily"},
+{"id":"generous","en":"generous","bg":"щедър","def":"is happy to give money, time or help to other people"},
+{"id":"gentle","en":"gentle","bg":"нежен, кротък","def":"is calm and soft; is careful not to hurt anyone"},
+{"id":"greedy","en":"greedy","bg":"алчен, лаком","def":"always wants more money, food or things than they need"},
+{"id":"hard-working","en":"hard-working","bg":"трудолюбив, работлив","def":"puts a lot of effort into their work"},
+{"id":"helpful","en":"helpful","bg":"услужлив","def":"is happy to help other people"},
+{"id":"hesitant","en":"hesitant","bg":"колеблив, нерешителен","def":"is not sure what to do or say, so waits before acting"},
+{"id":"inexperienced","en":"inexperienced","bg":"неопитен","def":"has little practice or knowledge of something"},
+{"id":"irresponsible","en":"irresponsible","bg":"безотговорен","def":"does not think about the results of their actions; you can't give them important tasks"},
+{"id":"jealous","en":"jealous","bg":"ревнив; завистлив","def":"is unhappy because someone else has something they want; is afraid of losing someone's love"},
+{"id":"kind","en":"kind","bg":"мил, добър","def":"is friendly and good to other people and cares about them"},
+{"id":"lazy","en":"lazy","bg":"мързелив","def":"does not like working or making an effort"},
+{"id":"loyal","en":"loyal","bg":"лоялен, верен","def":"always supports their friends or family, even in difficult times"},
+{"id":"mean","en":"mean","bg":"1. стиснат  2. лош, гаден","def":"1. hates spending or sharing money  2. is unkind to people"},
+{"id":"miserable","en":"miserable","bg":"нещастен, мрачен","def":"is very unhappy and often in a bad mood"},
+{"id":"modest","en":"modest","bg":"скромен","def":"does not talk much about their own success or abilities"},
+{"id":"naughty","en":"naughty","bg":"палав, непослушен (за деца)","def":"(usually a child) behaves badly and doesn't do what they are told"},
+{"id":"neat","en":"neat","bg":"спретнат, подреден","def":"keeps things tidy and in order; looks clean and tidy"},
+{"id":"nice","en":"nice","bg":"мил, приятен","def":"is pleasant and friendly"},
+{"id":"outgoing","en":"outgoing","bg":"общителен, открит","def":"is friendly and loves meeting and talking to new people"},
+{"id":"patient","en":"patient","bg":"търпелив","def":"can wait or deal with problems calmly, without getting angry"},
+{"id":"possessive","en":"possessive","bg":"собственически настроен","def":"wants to keep someone or something only for themselves"},
+{"id":"quiet","en":"quiet","bg":"тих, мълчалив","def":"does not talk much and does not make much noise"},
+{"id":"reliable","en":"reliable","bg":"надежден","def":"always does what they promise; you can count on them"},
+{"id":"ruthless","en":"ruthless","bg":"безмилостен, жесток","def":"will do anything to get what they want and doesn't care who gets hurt"},
+{"id":"selfish","en":"selfish","bg":"егоистичен","def":"thinks only about themselves and their own advantage"},
+{"id":"sensible","en":"sensible","bg":"разумен, благоразумен","def":"makes good, practical decisions; doesn't do silly things"},
+{"id":"sensitive","en":"sensitive","bg":"чувствителен","def":"1. gets hurt or upset easily  2. understands how other people feel"},
+{"id":"shy","en":"shy","bg":"срамежлив","def":"feels nervous and uncomfortable with people they don't know"},
+{"id":"silly","en":"silly","bg":"глупав, несериозен","def":"behaves in a childish, not serious way"},
+{"id":"sociable","en":"sociable","bg":"общителен, дружелюбен","def":"enjoys being and talking with other people"},
+{"id":"strict","en":"strict","bg":"строг","def":"makes people follow the rules and punishes them if they don't"},
+{"id":"stubborn","en":"stubborn","bg":"упорит, твърдоглав, инат","def":"refuses to change their mind, even when they are wrong"},
+{"id":"sympathetic","en":"sympathetic","bg":"съчувстващ, разбиращ","def":"understands other people's problems and shows that they care"},
+{"id":"touchy","en":"touchy","bg":"докачлив, обидчив","def":"gets offended or upset about small things"},
+{"id":"tough","en":"tough","bg":"корав, издръжлив, твърд","def":"is strong; can deal with pain and hard situations"},
+{"id":"trustworthy","en":"trustworthy","bg":"благонадежден, заслужаващ доверие","def":"is honest; you can trust them with your secrets, money or things"},
+{"id":"unpopular","en":"unpopular","bg":"непопулярен, нехаресван","def":"is not liked by many people"},
+{"id":"witty","en":"witty","bg":"остроумен","def":"says clever and funny things"}]},
+{"id":"opp","name":"Opposites","type":"opposites","items":[{"id":"unkind","base":"kind","opp":"unkind","bg":"нелюбезен, лош"},
+{"id":"unfriendly","base":"friendly","opp":"unfriendly","bg":"недружелюбен"},
+{"id":"unfair","base":"fair","opp":"unfair","bg":"несправедлив"},
+{"id":"unpopular","base":"popular","opp":"unpopular","bg":"непопулярен"},
+{"id":"unreliable","base":"reliable","opp":"unreliable","bg":"ненадежден"},
+{"id":"unselfish","base":"selfish","opp":"unselfish","bg":"безкористен"},
+{"id":"unhelpful","base":"helpful","opp":"unhelpful","bg":"неуслужлив"},
+{"id":"unsociable","base":"sociable","opp":"unsociable","bg":"необщителен","ex":["in"]},
+{"id":"unambitious","base":"ambitious","opp":"unambitious","bg":"без амбиции"},
+{"id":"untrustworthy","base":"trustworthy","opp":"untrustworthy","bg":"не заслужава доверие"},
+{"id":"inexperienced","base":"experienced","opp":"inexperienced","bg":"неопитен","ex":["un"]},
+{"id":"insensitive","base":"sensitive","opp":"insensitive","bg":"безчувствен, нетактичен"},
+{"id":"intolerant","base":"tolerant","opp":"intolerant","bg":"нетолерантен"},
+{"id":"inconsiderate","base":"considerate","opp":"inconsiderate","bg":"без внимание към другите"},
+{"id":"indecisive","base":"decisive","opp":"indecisive","bg":"нерешителен"},
+{"id":"impatient","base":"patient","opp":"impatient","bg":"нетърпелив","ex":["in"]},
+{"id":"impolite","base":"polite","opp":"impolite","bg":"неучтив, невъзпитан"},
+{"id":"immature","base":"mature","opp":"immature","bg":"незрял"},
+{"id":"immodest","base":"modest","opp":"immodest","bg":"нескромен"},
+{"id":"irresponsible","base":"responsible","opp":"irresponsible","bg":"безотговорен"},
+{"id":"irrational","base":"rational","opp":"irrational","bg":"неразумен, ирационален"},
+{"id":"illogical","base":"logical","opp":"illogical","bg":"нелогичен"},
+{"id":"dishonest","base":"honest","opp":"dishonest","bg":"нечестен"},
+{"id":"disloyal","base":"loyal","opp":"disloyal","bg":"нелоялен"},
+{"id":"disorganised","base":"organised","opp":"disorganised","bg":"неорганизиран, разхвърлян","ex":["un"]},
+{"id":"disobedient","base":"obedient","opp":"disobedient","bg":"непослушен"}]},
+{"id":"prep","name":"Prepositions","type":"prep","items":[{"id":"interested in","label":"interested in","acc":["in"],"s":"My sister is interested ___ fashion and music.","bg":"интересува се от"},
+{"id":"involved in","label":"involved in","acc":["in"],"s":"How many students are involved ___ the school play?","bg":"участват в"},
+{"id":"keen on","label":"keen on","acc":["on"],"s":"My cousin is really keen ___ skateboarding.","bg":"запален по"},
+{"id":"good at","label":"good at","acc":["at"],"s":"Are you good ___ drawing?","bg":"добър в"},
+{"id":"bad at","label":"bad at","acc":["at"],"s":"I'm bad ___ remembering birthdays.","bg":"слаб в"},
+{"id":"serious about","label":"serious about","acc":["about"],"s":"She's serious ___ becoming a doctor.","bg":"сериозно се отнася към"},
+{"id":"passionate about","label":"passionate about","acc":["about"],"s":"Our coach is passionate ___ football.","bg":"страстно отдаден на"},
+{"id":"responsible for","label":"responsible for","acc":["for"],"s":"Who is responsible ___ this mess in the kitchen?","bg":"отговорен за"},
+{"id":"disappointed with","label":"disappointed with","acc":["with","by","in"],"s":"The fans were disappointed ___ the final score.","bg":"разочаровани от"},
+{"id":"proud of","label":"proud of","acc":["of"],"s":"Her grandma is very proud ___ her.","bg":"горда с"},
+{"id":"afraid of","label":"afraid of","acc":["of"],"s":"Lots of people are afraid ___ spiders.","bg":"страхуват се от"},
+{"id":"scared of","label":"scared of","acc":["of"],"s":"Why are you scared ___ the dentist?","bg":"страх те е от"},
+{"id":"jealous of","label":"jealous of","acc":["of"],"s":"He's jealous ___ his brother's new bike.","bg":"завижда на"},
+{"id":"worried about","label":"worried about","acc":["about"],"s":"Mum is worried ___ my exams.","bg":"притеснена за"},
+{"id":"excited about","label":"excited about","acc":["about"],"s":"We're so excited ___ the school trip!","bg":"развълнувани за"},
+{"id":"kind to","label":"kind to","acc":["to"],"s":"Always be kind ___ animals.","bg":"мил с"},
+{"id":"nice to","label":"nice to","acc":["to"],"s":"The new teacher was very nice ___ us.","bg":"мил с"},
+{"id":"rude to","label":"rude to","acc":["to"],"s":"It's not OK to be rude ___ the waiter.","bg":"груб с"},
+{"id":"famous for","label":"famous for","acc":["for"],"s":"Italy is famous ___ pizza and pasta.","bg":"известна с"},
+{"id":"similar to","label":"similar to","acc":["to"],"s":"Your phone is similar ___ mine.","bg":"подобен на"},
+{"id":"different from","label":"different from","acc":["from","to"],"s":"My taste in music is very different ___ my sister's.","bg":"различен от"},
+{"id":"fond of","label":"fond of","acc":["of"],"s":"I'm very fond ___ my old teddy bear.","bg":"обичам"},
+{"id":"tired of","label":"tired of","acc":["of"],"s":"I'm tired ___ eating pasta every day.","bg":"омръзна ми да"},
+{"id":"fed up with","label":"fed up with","acc":["with"],"s":"She's fed up ___ the rain.","bg":"писна ѝ от"}]}]}]}]};
+
+/* ---------- icons ---------- */
+const IC={
+  back:'<path d="M15 18l-6-6 6-6"/>', chev:'<path d="M9 18l6-6-6-6"/>', plus:'<path d="M12 5v14M5 12h14"/>',
+  play:'<path d="M8 5.5l11 6.5-11 6.5z" fill="currentColor"/>', chart:'<path d="M5 20V11M11 20V5M17 20v-6M3 20h18"/>',
+  flame:'<path d="M12 3c.8 3.6 5 5.2 5 10.2A5 5 0 0 1 7 13c0-2.6 1.6-3.8 2-5.6 1.4.9 2.3 2.1 2.4 3.8C13 9 12.8 5.8 12 3z"/>',
+  cards:'<rect x="3" y="7" width="13" height="14" rx="2"/><path d="M8 3.5h11a2 2 0 0 1 2 2V17"/>',
+  pen:'<path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M14.5 7.5l3 3"/>',
+  book:'<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5V5.5M20 18v3H6.5"/>',
+  note:'<rect x="5" y="3" width="15" height="18" rx="2"/><path d="M9 3v18M12.5 8h4M12.5 12h4"/>',
+  camera:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  image:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="9.5" r="1.6"/><path d="M3 17l5-5 4 4 3-3 6 6"/>',
+  x:'<path d="M6 6l12 12M18 6L6 18"/>', check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  alert:'<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.3"/>', home:'<path d="M4 11l8-6.5 8 6.5v9H4z"/>',
+  redo:'<path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5"/><path d="M4 4v5h5"/>', trash:'<path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13"/>',
+  words:'<path d="M4 6h16M4 12h10M4 18h7"/>', speaker:'<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 9a4 4 0 0 1 0 6"/>'
+};
+const icon=(k,cls="")=>`<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${IC[k]}</svg>`;
+const txtIcon=t=>`<span style="font-weight:800;font-size:.85rem;letter-spacing:-.02em">${t}</span>`;
+
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s);
+const $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const shuffle=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+const norm=s=>s.toLowerCase().trim().replace(/[’`]/g,"'").replace(/\s+/g," ");
+function lev(a,b){const m=a.length,n=b.length;const d=Array.from({length:m+1},(_,i)=>[i]);for(let j=1;j<=n;j++)d[0][j]=j;
+  for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[m][n]}
+const bgTokens=s=>new Set(String(s||"").toLowerCase().split(/[^а-яѝ]+/).filter(w=>w.length>2));
+const pct=(a,b)=>b?Math.round(a/b*100):0;
+const ymd=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const today=()=>ymd(new Date());
+const plural=(n,w)=>n+" "+w+(n===1?"":"s");
+function toast(t){const d=document.createElement("div");d.className="toast";d.setAttribute("role","status");d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2400)}
+function keep(fn){const y=window.scrollY;fn();window.scrollTo(0,y)}
+/* accepted English answers: "a = b", "x / y", "(doing sth)", "(BrE)", "lie - lay - lain", leading to/a */
+function variants(en){
+  const out=new Set();const add=s=>{s=s.trim().replace(/\s+/g," ");if(s)out.add(s)};
+  add(en);
+  en.split(/\s=\s|=|\s\/\s|\//).forEach(part=>{
+    part=part.trim();add(part);
+    add(part.replace(/\([^)]*\)/g,""));add(part.replace(/[()]/g,""));
+    add(part.split(/\s-\s/)[0]);
+  });
+  [...out].forEach(s=>{add(s.replace(/^(to|a|an|the)\s+/i,""))});
+  return [...out];
+}
+const cleanSay=en=>String(en).replace(/\([^)]*\)/g,"").replace(/\s=\s.*$/,"").replace(/\s\/\s.*$/,"").trim();
+
+/* ---------- pronunciation ---------- */
+const canSpeak="speechSynthesis" in window;let voice=null;
+function pickVoice(){try{const v=speechSynthesis.getVoices();const gb=v.filter(x=>/^en[-_]GB/i.test(x.lang));
+  const good=x=>/enhanced|premium|neural|natural|google/i.test(x.name);
+  voice=gb.find(good)||gb.find(x=>!x.localService)||gb[0]||v.find(x=>/^en/i.test(x.lang)&&good(x))||v.find(x=>/^en/i.test(x.lang))||null}catch(e){}}
+if(canSpeak){pickVoice();try{speechSynthesis.onvoiceschanged=pickVoice}catch(e){}}
+function speak(t){if(!canSpeak)return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang="en-GB";if(voice)u.voice=voice;u.rate=.9;u.volume=1;u.pitch=1;speechSynthesis.speak(u)}catch(e){}}
+const sayBtn=t=>canSpeak&&t?`<button class="say" data-say="${esc(t)}" aria-label="Listen">${icon("speaker")}</button>`:"";
+document.addEventListener("click",e=>{const b=e.target.closest("[data-say]");if(b){e.stopPropagation();speak(b.dataset.say)}},true);
+
+/* ---------- data: textbook decks, notebook ---------- */
+const DECKS={nb:{name:"Notebook",type:"nb",items:[]}};
+let UNITS=[],TB=null;
+function setTextbook(tb){
+  if(!tb||!Array.isArray(tb.units))return false;
+  const decks={},units=[];
+  tb.units.forEach(u=>{
+    const unit={n:String(u.id),num:parseInt(u.id,10)||0,topic:u.topic||"",sections:[],sets:[]};
+    (u.sections||[]).forEach(s=>{
+      const sec={id:String(s.id),lessons:(s.lessons||[String(s.id)]).map(String),title:s.title||"",decks:[]};
+      (s.decks||[]).forEach(dk=>{
+        if(!dk||!dk.id||dk.id==="nb"||decks[dk.id]||/^unit\d/.test(dk.id))return;
+        const type=dk.type||"vocab";
+        const items=(dk.items||[]).map(it=>type==="opposites"?{id:String(it.id),base:it.base,opp:it.opp,bg:it.bg||"",ex:it.ex||[]}
+          :type==="prep"?{id:String(it.id),label:it.label,acc:it.acc||[],s:it.s,bg:it.bg||""}
+          :{id:String(it.id),en:it.en,bg:it.bg||"",def:it.def||""})
+          .filter(it=>type==="opposites"?it.base&&it.opp:type==="prep"?it.s&&it.acc.length:it.en);
+        if(!items.length)return;
+        decks[dk.id]={name:dk.name||dk.id,type,unit:unit.n,section:sec.id,items};
+        sec.decks.push(dk.id);unit.sets.push(dk.id);
+      });
+      if(sec.decks.length)unit.sections.push(sec);
+    });
+    if(!unit.sets.length)return;
+    if(!unit.topic)unit.topic=unit.sections[0].title||"";
+    unit.sub=unit.sections.map(s=>s.id).join(", ");
+    if(unit.sets.length>=2)decks["unit"+unit.n]={name:"All of Unit "+unit.n,type:"mix",mix:true,unit:unit.n,
+      items:unit.sets.flatMap(d=>decks[d].items.map(it=>({id:d+":"+it.id,d,it})))};
+    units.push(unit);
+  });
+  if(!units.length)return false;
+  Object.keys(DECKS).forEach(k=>{if(k!=="nb")delete DECKS[k]});
+  Object.assign(DECKS,decks);
+  UNITS=units.sort((a,b)=>b.num-a.num||String(b.n).localeCompare(String(a.n)));
+  TB=tb;return true;
+}
+setTextbook(TB_DEFAULT);
+try{const c=JSON.parse(localStorage.getItem("maya-tb-cache")||"null");if(c)setTextbook(c)}catch(e){}
+const realDecks=()=>UNITS.flatMap(u=>u.sets);
+const unitOf=n=>UNITS.find(u=>u.n===String(n));
+
+let NB_STATE=GAS?"loading":"none";
+function setNotebook(rows){
+  DECKS.nb.items=(rows||[]).filter(r=>r&&r[0]&&r[1]).map(([id,en,bg])=>({id:String(id),num:parseInt(id,10)||0,en,bg:bg||""}));
+  NB_STATE=DECKS.nb.items.length?"ok":"empty";
+}
+try{const c=JSON.parse(localStorage.getItem("maya-nb-cache")||"null");if(c&&c.length)setNotebook(c)}catch(e){}
+let CORR=[];
+try{CORR=JSON.parse(localStorage.getItem("maya-corr-cache")||"[]")||[]}catch(e){CORR=[]}
+
+/* ---------- storage ---------- */
+const KEY="maya-words-v2";
+const DEF_PREF={deck:"words",mode:"choice",dir:"en",n:10,nbFrom:1,nbTo:"",nbLast:0};
+let S={};
+try{S=JSON.parse(localStorage.getItem(KEY))||{}}catch(e){S={}}
+S.st=S.st||{};S.days=S.days||[];S.log=S.log||[];
+function migratePref(){
+  S.pref=Object.assign({},DEF_PREF,S.pref||{});
+  if(!S.pref.flashDir)S.pref.flashDir=S.pref.mode==="flash"?(S.pref.dir||"en"):"en";
+  if(!S.pref.lastByDeck||typeof S.pref.lastByDeck!=="object")S.pref.lastByDeck={};
+}
+migratePref();
+/* progress older than RESET_AT is discarded, on the device and in the cloud */
+const RESET_AT=1791816900000;
+if((S.resetAt||0)<RESET_AT){S={st:{},days:[],log:[],pref:S.pref,resetAt:RESET_AT};try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+let cloud=GAS?"syncing":"off",pushTimer=null;
+const call=(fn,...a)=>GSR?new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...a)):apiCall(fn,a);
+/* doPost answers {ok,result} or {ok:false,error}; network errors and ok:false both reject, like withFailureHandler */
+function apiCall(fn,args){
+  const ctl=typeof AbortController!=="undefined"?new AbortController():null;
+  const t=ctl?setTimeout(()=>ctl.abort(),fn==="extractPage"?120000:45000):0;
+  return fetch(API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({fn,args,key:CFG.k}),signal:ctl?ctl.signal:undefined})
+    .then(r=>r.json()).then(j=>{if(!j||!j.ok)throw new Error((j&&j.error)||"Server error");return j.result})
+    .finally(()=>clearTimeout(t));
+}
+function saveLocal(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function save(){S.updated=Date.now();saveLocal();if(GAS){clearTimeout(pushTimer);pushTimer=setTimeout(push,1500)}}
+function push(){clearTimeout(pushTimer);pushTimer=null;if(!GAS)return;
+  call("saveState",JSON.stringify(S)).then(()=>{cloud="ok";syncChanged()}).catch(()=>{cloud="err";syncChanged()})}
+function merge(a,b){
+  const out={st:{},pref:(b.updated||0)>(a.updated||0)?(b.pref||a.pref):a.pref,updated:Math.max(a.updated||0,b.updated||0),resetAt:Math.max(a.resetAt||0,b.resetAt||0)};
+  const as=a.st||{},bs=b.st||{};
+  for(const k of new Set([...Object.keys(as),...Object.keys(bs)])){const x=as[k],y=bs[k];out.st[k]=!x?y:!y?x:((y.t||0)>(x.t||0)?y:x)}
+  out.days=[...new Set([...(a.days||[]),...(b.days||[])])].sort().slice(-60);
+  const seen=new Set();
+  out.log=[...(a.log||[]),...(b.log||[])].filter(l=>{const k=(l.ts||l.when)+"|"+l.what;if(seen.has(k))return false;seen.add(k);return true})
+    .sort((p,q)=>(p.ts||0)-(q.ts||0)).slice(-30);
+  return out}
+const syncText=()=>cloud==="ok"?"Your progress is saved online, on all your devices.":cloud==="syncing"?"Loading your progress...":cloud==="err"?"No connection: progress is saved on this device and will sync later.":"Your progress is saved on this device only.";
+function syncChanged(){const n=$("#sync");if(n)n.textContent=syncText();const t=top_();if(t&&t.name==="home"&&NAV.stack.length===1&&!SHEET_OPEN){const has=!!$("#syncerr");if(has!==(cloud==="err"))keep(render)}}
+function refreshRoot(){const t=top_();if(!t||SHEET_OPEN||NAV.stack.length!==1)return;if(["home","mistakes","progress"].includes(t.name))keep(render)}
+function pull(){if(!GAS)return;
+  call("getState").then(txt=>{let srv={};try{srv=txt?JSON.parse(txt):{}}catch(e){}
+    if((srv.resetAt||0)<RESET_AT)srv={};
+    S=merge(S,srv);migratePref();saveLocal();
+    cloud="ok";refreshRoot();syncChanged();push()})
+  .catch(()=>{cloud="err";syncChanged()});
+  call("getNotebook").then(txt=>{let rows=[];try{rows=JSON.parse(txt||"[]")}catch(e){}
+    setNotebook(rows);try{localStorage.setItem("maya-nb-cache",JSON.stringify(rows))}catch(e){}
+    refreshRoot()}).catch(()=>{if(!DECKS.nb.items.length){NB_STATE="err";refreshRoot()}});
+  loadTextbook();loadCorrections();
+}
+function loadTextbook(){if(!GAS)return Promise.resolve();
+  return call("getTextbook").then(txt=>{if(!txt)return;let tb=null;try{tb=JSON.parse(txt)}catch(e){}
+    if(tb&&setTextbook(tb)){try{localStorage.setItem("maya-tb-cache",txt)}catch(e){}refreshRoot()}}).catch(()=>{})}
+function loadCorrections(){if(!GAS)return Promise.resolve();
+  return call("getCorrections").then(txt=>{let c=[];try{c=JSON.parse(txt||"[]")}catch(e){}
+    CORR=(Array.isArray(c)?c:[]).map(x=>Object.assign({},x,{num:String(x.num||"").replace(/^'/,"")}));try{localStorage.setItem("maya-corr-cache",JSON.stringify(CORR))}catch(e){}refreshRoot()}).catch(()=>{})}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden"&&pushTimer)push()});
+
+/* ---------- progress per word ---------- */
+const key=(d,id)=>DECKS[d]&&DECKS[d].mix?id:d+":"+id;
+const st=(d,id)=>S.st[key(d,id)];
+const isMistake=(d,id)=>{const s=st(d,id);return !!s&&s.bad>0&&s.b<2};
+const isLearned=(d,id)=>{const s=st(d,id);return !!s&&s.b>=3};
+function grade(d,id,ok){const k=key(d,id);const s=S.st[k]||{b:0,ok:0,bad:0,t:0};
+  if(ok){s.ok++;s.b=Math.min(5,s.b+1)}else{s.bad++;s.b=0}s.t=Date.now();S.st[k]=s;save()}
+function streak(){const set=new Set(S.days);let n=0;const d=new Date();
+  if(!set.has(today()))d.setDate(d.getDate()-1);
+  while(set.has(ymd(d))){n++;d.setDate(d.getDate()-1)}return n}
+
+/* ---------- notebook range ---------- */
+const nbAll=()=>DECKS.nb.items;
+const nbLastId=()=>{const a=nbAll();return a.length?a[a.length-1].id:""};
+const nbLastNum=()=>{const a=nbAll();return a.length?a[a.length-1].num:0};
+function nbRange(p){const all=nbAll();if(!all.length)return [];if(p.nbLast)return all.slice(-p.nbLast);
+  const f=+p.nbFrom||1,t=+p.nbTo||99999;return all.filter(x=>x.num>=f&&x.num<=t)}
+function nbBounds(p){const r=nbRange(p);return r.length?[r[0].num,r[r.length-1].num]:[p.nbFrom||"",p.nbTo||""]}
+function nbLabel(p){if(p.nbLast)return "latest "+p.nbLast;if((+p.nbFrom||1)===1&&!p.nbTo)return "all";const r=nbRange(p);return r.length?"#"+r[0].id+" to #"+r[r.length-1].id:"#"+(p.nbFrom||1)+" to #"+(p.nbTo||"")}
+function deckItems(d,p=S.pref){return d==="nb"?nbRange(p):DECKS[d]?DECKS[d].items:[]}
+function counts(d,items){items=items||deckItems(d);return{total:items.length,learned:items.filter(x=>isLearned(d,x.id)).length,mist:items.filter(x=>isMistake(d,x.id)).length}}
+function allMistakes(){return ["nb",...realDecks()].map(d=>({d,n:DECKS[d].items.filter(x=>isMistake(d,x.id)).length})).filter(x=>x.n)}
+const totalMistakes=()=>allMistakes().reduce((a,x)=>a+x.n,0);
+const totalLearned=()=>["nb",...realDecks()].reduce((a,d)=>a+DECKS[d].items.filter(x=>isLearned(d,x.id)).length,0);
+
+/* ---------- modes: the direction is part of the mode ---------- */
+function modesFor(d){
+  const t=DECKS[d]?DECKS[d].type:"vocab";
+  if(t==="mix")return[
+    {k:"flash",mode:"flash",dir:"en",ic:icon("cards"),t:"Flashcards",s:"Words from all sets, mixed"},
+    {k:"choice",mode:"choice",dir:"en",ic:txtIcon("A→Б"),t:"Pick the answer",s:"Meaning, opposite or preposition"},
+    {k:"type",mode:"type",dir:"en",ic:icon("pen"),t:"Write the answer",s:"Type it, spelling counts"}];
+  if(t==="opposites")return[
+    {k:"flash",mode:"flash",dir:"en",ic:icon("cards"),t:"Flashcards",s:"See a word, think of its opposite"},
+    {k:"choice",mode:"choice",dir:"en",ic:txtIcon("un-"),t:"Pick the opposite",s:"Choose from 4 options"},
+    {k:"type",mode:"type",dir:"en",ic:icon("pen"),t:"Write the opposite",s:"Type it, spelling counts"}];
+  if(t==="prep")return[
+    {k:"flash",mode:"flash",dir:"en",ic:icon("cards"),t:"Flashcards",s:"See the sentence, think of the word"},
+    {k:"choice",mode:"choice",dir:"en",ic:txtIcon("in?"),t:"Pick the preposition",s:"Choose from 4 options"},
+    {k:"type",mode:"type",dir:"en",ic:icon("pen"),t:"Write the preposition",s:"Type the missing word"}];
+  return[
+    {k:"flash",mode:"flash",dir:null,ic:icon("cards"),t:"Flashcards",s:"Turn the card. Did you know it?"},
+    {k:"meaning",mode:"choice",dir:"en",ic:txtIcon("A→Б"),t:"Pick the meaning",s:"See English, choose Bulgarian"},
+    {k:"english",mode:"choice",dir:"bg",ic:txtIcon("Б→A"),t:"Pick the English word",s:"See Bulgarian, choose English"},
+    {k:"write",mode:"type",dir:"en",ic:icon("pen"),t:"Write the word",s:"See Bulgarian, type English"}];
+}
+const twoDir=d=>DECKS[d]&&(DECKS[d].type==="vocab"||DECKS[d].type==="nb");
+function modeTitle(d,mode,dir){const ms=modesFor(d);const m=ms.find(x=>x.mode===mode&&(mode!=="choice"||!twoDir(d)||x.dir===dir))||ms.find(x=>x.mode===mode);return m?m.t:mode}
+function deckTitle(d,p=S.pref){const D=DECKS[d];if(!D)return "Practice";if(D.mix)return "Unit "+D.unit+" · all sets";if(d==="nb")return "Notebook · "+nbLabel(p);return D.name+" · Unit "+D.unit}
+function prefValid(p=S.pref){return !!DECKS[p.deck]&&modesFor(p.deck).some(m=>m.mode===p.mode)}
+function prefSummary(p=S.pref){const d=p.deck;const items=deckItems(d,p);const n=p.n==="all"?items.length:Math.min(p.n,items.length);
+  const fl=p.mode==="flash"&&twoDir(d)&&p.dir==="bg"?" (Bulgarian first)":"";
+  return{what:deckTitle(d,p),how:modeTitle(d,p.mode,p.dir)+fl+" · "+plural(n,"word")}}
+
+/* ---------- navigation: an in-app stack; every inner screen has a visible way back ---------- */
+const SCREENS={};
+const NAV={stack:[]};
+let TAB="home";
+function go(name,params={}){NAV.stack.push({name,params});render()}
+function replace(name,params={}){NAV.stack.pop();NAV.stack.push({name,params});render()}
+function back(){if(NAV.stack.length>1)NAV.stack.pop();render()}
+function resetTo(name,params={}){NAV.stack=[{name,params}];render()}
+const top_=()=>NAV.stack[NAV.stack.length-1];
+const parentLabel=()=>{const p=NAV.stack[NAV.stack.length-2];return p&&SCREENS[p.name]?(SCREENS[p.name].label||"Back"):"Back"};
+function render(){closeSheet(true);const cur=top_();const scr=SCREENS[cur.name](cur.params)||{};
+  document.body.dataset.screen=cur.name;
+  $("#app").innerHTML=scr.html||"";window.scrollTo(0,0);
+  setTabs(scr.tab||null);setDock(scr.dock||"");
+  if(scr.after)scr.after()}
+function appbar(title,opts={}){const backLbl=opts.backLabel||parentLabel();
+  return `<header class="appbar"><div class="appbar-in">
+    ${opts.noBack?"<span></span>":`<button class="backbtn" ${opts.backId?`id="${opts.backId}"`:"data-back"}>${icon("back")}${esc(backLbl)}</button>`}
+    <h2>${esc(title)}</h2><span></span></div></header>`}
+document.addEventListener("click",e=>{if(e.target.closest("[data-back]")){e.preventDefault();back()}});
+function setDock(html){const d=$("#dock");if(!html){d.hidden=true;d.innerHTML="";document.body.classList.remove("has-dock");return}
+  d.innerHTML='<div class="dock-in">'+html+'</div>';d.hidden=false;document.body.classList.add("has-dock");
+  const upd=()=>document.body.style.setProperty("--dock-h",d.offsetHeight+(document.body.classList.contains("has-tabs")?62:0)+"px");
+  upd();requestAnimationFrame(upd)}
+function setTabs(tab){let t=$("#tabbar");
+  if(!tab){if(t)t.remove();document.body.classList.remove("has-tabs");return}
+  if(!t){t=document.createElement("nav");t.id="tabbar";t.className="tabbar";t.setAttribute("aria-label","Main");document.body.appendChild(t)}
+  document.body.classList.add("has-tabs");const tm=totalMistakes();
+  const T=[["home","home","Home"],["mistakes","redo","Mistakes"],["add","plus","Add words"],["progress","chart","Progress"]];
+  t.innerHTML=`<div class="tabbar-in">${T.map(([k,ic,l])=>`<button class="tab" data-tab="${k}" ${k===tab?'aria-current="page"':""}>${k==="add"?`<span class="plus">${icon("plus")}</span>`:`<span style="position:relative;display:grid">${icon(ic)}${k==="mistakes"&&tm?`<b class="badge">${tm}</b>`:""}</span>`}${l}</button>`).join("")}</div>`;
+  t.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{const k=b.dataset.tab;
+    if(k==="add"){startAdd();return}
+    if(k===TAB&&NAV.stack.length===1){window.scrollTo(0,0);return}
+    TAB=k;resetTo(k,{root:true})})}
+function goHome(){TAB="home";resetTo("home",{root:true})}
+
+/* ---------- bottom sheet ---------- */
+let SHEET_OPEN=false;
+function openSheet(html,after){closeSheet(true);const sc=document.createElement("div");sc.className="scrim";sc.id="scrim";
+  const sh=document.createElement("section");sh.className="sheet";sh.id="sheet";sh.setAttribute("role","dialog");sh.setAttribute("aria-modal","true");
+  sh.innerHTML='<div class="sheet-in"><div class="grab" aria-hidden="true"></div>'+html+'</div>';
+  document.body.append(sc,sh);SHEET_OPEN=true;requestAnimationFrame(()=>{sc.classList.add("on");sh.classList.add("on")});
+  sc.onclick=()=>closeSheet();
+  let y0=null;sh.addEventListener("touchstart",e=>{if(sh.scrollTop<=0&&!e.target.closest("input"))y0=e.touches[0].clientY},{passive:true});
+  sh.addEventListener("touchmove",e=>{if(y0!==null){const dy=e.touches[0].clientY-y0;if(dy>0)sh.style.transform=`translateY(${dy}px)`}},{passive:true});
+  sh.addEventListener("touchend",e=>{if(y0===null)return;const dy=e.changedTouches[0].clientY-y0;y0=null;sh.style.transform="";if(dy>90)closeSheet()});
+  if(after)after(sh)}
+function closeSheet(now){const sc=$("#scrim"),sh=$("#sheet");if(!sh){SHEET_OPEN=false;return}SHEET_OPEN=false;
+  if(now){if(sc)sc.remove();sh.remove();return}if(sc)sc.classList.remove("on");sh.classList.remove("on");setTimeout(()=>{if(sc)sc.remove();sh.remove()},220)}
+
+/* ---------- the "how" panel: range (notebook), count, modes ---------- */
+function modePanel(d,draft){
+  const items=deckItems(d,draft);const c=counts(d,items);const ms=modesFor(d);
+  const last=(S.pref.lastByDeck||{})[d]||(S.pref.deck===d?{mode:S.pref.mode,dir:S.pref.dir}:null);
+  const nAll=items.length;const custom=!!draft._custom;
+  const latestOn=v=>!custom&&(v?draft.nbLast===v:!draft.nbLast&&(+draft.nbFrom||1)===1&&!draft.nbTo);
+  const rangeHtml=d==="nb"?`<div class="field-row"><span class="label">Which words</span>
+      <div class="seg" style="--cols:3">${[[20,"Latest 20"],[50,"Latest 50"],[0,"All"]].map(([v,l])=>`<button data-last="${v}" aria-pressed="${latestOn(v)}">${l}</button>`).join("")}</div>
+      <div class="range${custom||(!draft.nbLast&&!latestOn(0))?" on":""}" id="rng"><label for="nbf">From #</label><input id="nbf" type="number" inputmode="numeric" min="1" value="${esc(nbBounds(draft)[0])}"><label for="nbt">to #</label><input id="nbt" type="number" inputmode="numeric" min="1" value="${esc(nbBounds(draft)[1])}"></div>
+      <p class="hint" id="nbcount">${nbCountHtml(nAll)}</p></div>`:"";
+  return `${rangeHtml}
+    <div class="field-row"><span class="label">How many words</span>
+      <div class="seg small" style="--cols:3">${[["10","10"],["20","20"],["all","All "+nAll]].map(([v,l])=>`<button data-n="${v}" aria-pressed="${String(draft.n)===v}">${l}</button>`).join("")}</div></div>
+    <div class="field-row"><span class="label">Start practising</span>
+    <div class="modes">${ms.map(m=>{const isLast=!!last&&last.mode===m.mode&&(m.mode!=="choice"||!twoDir(d)||last.dir===m.dir);
+      return `<button class="mode${isLast?" last":""}" data-mode="${m.k}" ${nAll?"":"disabled"}><span class="ic">${m.ic}</span><span class="txt">${isLast?'<span class="tag">Last time</span>':""}<b>${m.t}</b><span>${m.s}</span></span><span class="go">${icon("play")}</span></button>`+
+      (m.k==="flash"&&twoDir(d)?`<div class="flashopt"><span>Show first</span><div class="seg small"><button data-fdir="en" aria-pressed="${(draft.flashDir||"en")!=="bg"}">English</button><button data-fdir="bg" aria-pressed="${draft.flashDir==="bg"}">Bulgarian</button></div></div>`:"")}).join("")}
+    </div></div>
+    ${c.mist?`<button class="btn warn block" id="fixm">${icon("redo")} Practise mistakes (${c.mist})</button>`:""}`;
+}
+const nbCountHtml=n=>n?`<b>${plural(n,"word")}</b> · your notebook goes up to #${esc(nbLastId())}`:`<b style="color:var(--bad)">No words in this range.</b> Your notebook goes from #1 to #${esc(nbLastId())}.`;
+function wireModePanel(root,d,draft,rerender){
+  const q=s=>root.querySelector(s);
+  root.querySelectorAll("[data-n]").forEach(b=>b.onclick=()=>{draft.n=b.dataset.n==="all"?"all":+b.dataset.n;root.querySelectorAll("[data-n]").forEach(x=>x.setAttribute("aria-pressed",String(x===b)))});
+  root.querySelectorAll("[data-fdir]").forEach(b=>b.onclick=()=>{draft.flashDir=b.dataset.fdir;root.querySelectorAll("[data-fdir]").forEach(x=>x.setAttribute("aria-pressed",String(x===b)))});
+  root.querySelectorAll("[data-last]").forEach(b=>b.onclick=()=>{const v=+b.dataset.last;draft._custom=false;draft.nbLast=v;if(!v){draft.nbFrom=1;draft.nbTo=""}rerender()});
+  const f=q("#nbf"),t=q("#nbt");
+  if(f){const apply=()=>{draft._custom=true;draft.nbLast=0;draft.nbFrom=f.value?+f.value:1;draft.nbTo=t.value?+t.value:"";
+      q("#rng").classList.add("on");root.querySelectorAll("[data-last]").forEach(x=>x.setAttribute("aria-pressed","false"));
+      const n=nbRange(draft).length;q("#nbcount").innerHTML=nbCountHtml(n);
+      const all=root.querySelector('[data-n="all"]');if(all)all.textContent="All "+n;
+      root.querySelectorAll("[data-mode]").forEach(b=>b.disabled=!n);const fm=q("#fixm");if(fm)fm.disabled=!n};
+    f.oninput=apply;t.oninput=apply;
+    [f,t].forEach(x=>x.onfocus=()=>{q("#rng").classList.add("on")})}
+  root.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{const m=modesFor(d).find(x=>x.k===b.dataset.mode);
+    const p=Object.assign({},draft,{deck:d,mode:m.mode,dir:m.dir===null?(draft.flashDir||"en"):m.dir});startQuiz(p,false)});
+  const fm=q("#fixm");if(fm)fm.onclick=()=>{const last=(S.pref.lastByDeck||{})[d];
+    const p=Object.assign({},draft,{deck:d},last&&modesFor(d).some(m=>m.mode===last.mode)?last:{mode:"choice",dir:"en"});startQuiz(p,true)};
+}
+function openDeckSheet(d){
+  if(!DECKS[d])return;
+  if(d==="nb"&&!nbAll().length){toast(NB_STATE==="loading"?"Your notebook is still loading.":"Your notebook is not available right now.");return}
+  const draft=Object.assign({},S.pref);
+  if(d!=="nb"&&S.pref.deck!==d){/* keep count and flash setting, the range is only for the notebook */}
+  const D=DECKS[d];
+  const small=d==="nb"?"Your vocabulary notebook":D.mix?"Focus · "+unitOf(D.unit).sets.map(x=>DECKS[x].name).join(", "):"Unit "+D.unit+" · Focus";
+  const draw=sh=>{const c=counts(d,D.items);
+    sh.querySelector(".sheet-in").innerHTML=`<div class="grab" aria-hidden="true"></div>
+      <div class="sheet-head"><div class="txt"><p>${esc(small)}</p><h2>${esc(D.name)}</h2>
+      <p>${c.learned} of ${D.items.length} learned</p></div><button class="iconbtn" data-close aria-label="Close">${icon("x")}</button></div>
+      ${modePanel(d,draft)}`;
+    sh.querySelector("[data-close]").onclick=()=>closeSheet();
+    wireModePanel(sh,d,draft,()=>{const y=sh.scrollTop;draw(sh);sh.scrollTop=y})};
+  openSheet("",draw)}
+
+/* ---------- Home ---------- */
+let OPEN_UNIT=null,SHOW_OLDER=false;
+function deckTile(d){const D=DECKS[d];const c=counts(d,D.items);
+  return `<button class="tile" data-deck="${esc(d)}"><span class="t">${esc(D.name)}</span>
+    <span class="s">${plural(c.total,"word")}</span>${c.mist?`<span class="s bad">${plural(c.mist,"mistake")}</span>`:""}
+    <span class="bar"><i style="width:${pct(c.learned,c.total)}%"></i></span></button>`}
+function allTile(u){const d="unit"+u.n;if(!DECKS[d])return "";const c=counts(d,DECKS[d].items);
+  return `<button class="tile wide" data-deck="${d}" style="min-height:70px"><span class="ic">${icon("words")}</span><span class="col">
+    <span class="t" style="font-size:1.05rem">All of Unit ${esc(u.n)}</span><span class="s">${u.sets.length} sets mixed · ${plural(c.total,"word")}</span>${c.mist?`<span class="s bad">${plural(c.mist,"mistake")}</span>`:""}
+    <span class="bar"><i style="width:${pct(c.learned,c.total)}%"></i></span></span>${icon("chev","chev")}</button>`}
+const openUnit=()=>OPEN_UNIT===null?(UNITS[0]?UNITS[0].n:""):OPEN_UNIT;
+function unitBlock(u){const open=openUnit()===u.n;const tot=u.sets.reduce((a,d)=>a+DECKS[d].items.length,0);
+  const grouped=u.sections.length>1;
+  return `<div class="unit"><button class="unit-head" data-unit="${esc(u.n)}" aria-expanded="${open}"><span class="txt"><b>Unit ${esc(u.n)}${u.topic?" · "+esc(u.topic):""}</b><span>${esc(u.sub)} · ${plural(u.sets.length,"set")} · ${plural(tot,"word")}</span></span>${icon("chev","chev")}</button>
+    ${open?`<div class="tiles">${allTile(u)}${u.sections.map(s=>(grouped?`<span class="sec-label">${esc(s.id)}${s.title?" · "+esc(s.title):""}</span>`:"")+s.decks.map(deckTile).join("")).join("")}</div>`:""}</div>`}
+function unitsHtml(){const L=UNITS;if(!L.length)return `<p class="hint">The textbook words are not available right now.</p>`;
+  const head=L.slice(0,2),older=L.slice(2);if(older.some(u=>u.n===openUnit()))SHOW_OLDER=true;
+  return head.map(unitBlock).join("")+(older.length?`<div class="unit"><button class="unit-head" id="older" aria-expanded="${SHOW_OLDER}"><span class="txt"><b style="font-size:1rem">Older units (${older.length})</b><span>Unit ${esc(older[older.length-1].n)} to Unit ${esc(older[0].n)}</span></span>${icon("chev","chev")}</button>
+    ${SHOW_OLDER?`<div class="older">${older.map(unitBlock).join("")}</div>`:""}</div>`:"")}
+function nbTile(){const all=nbAll();
+  if(!all.length)return `<button class="tile wide" disabled><span class="ic">${icon("note")}</span><span class="col"><span class="t">My notebook</span><span class="s">${NB_STATE==="loading"?"Loading your notebook...":"Your notebook is not available right now."}</span></span></button>`;
+  const c=counts("nb",all);
+  return `<button class="tile wide" data-deck="nb"><span class="ic">${icon("note")}</span><span class="col">
+    <span class="t">My notebook</span><span class="s">${plural(all.length,"word")} · #${esc(all[0].id)} to #${esc(nbLastId())}</span>${c.mist?`<span class="s bad">${plural(c.mist,"mistake")}</span>`:""}
+    <span class="bar"><i style="width:${pct(c.learned,c.total)}%"></i></span></span>${icon("chev","chev")}</button>`}
+function contPref(){return prefValid(S.pref)?S.pref:Object.assign({},S.pref,{deck:DECKS.words?"words":realDecks()[0]||"nb",mode:"choice",dir:"en"})}
+function contDock(){const p=contPref();const first=!S.log.length;const sum=prefSummary(p);
+  let dis="",lbl=first?"Start":"Continue";
+  if(p.deck==="nb"&&!nbAll().length){dis="disabled";lbl="Loading..."}
+  else if(!deckItems(p.deck,p).length){dis="disabled";lbl="No words"}
+  return `<div class="cont"><button class="txt" id="conttxt" aria-label="Change: ${esc(sum.what)}"><b>${esc(sum.what)}</b><span>${esc(sum.how)}</span></button><button class="btn primary" id="cont" ${dis}>${icon("play")} ${lbl}</button></div>`}
+SCREENS.home=()=>{const sk=streak();const tl=totalLearned();
+  const chips=(sk||tl)?`<span class="hchip">${icon("flame")} ${sk} ${sk===1?"day":"days"} in a row</span><span class="hchip">${icon("check")} ${tl} learned</span>`:`<span class="hint">Choose what to practise below</span>`;
+  return{tab:"home",html:`<header class="hero"><div class="hero-in">
+      <span class="eyebrow">Word Trainer</span>
+      <h1>${NAME?"Hi, "+esc(NAME):"Hi!"}</h1>
+      <div class="hero-stats">${chips}</div>
+    </div></header>
+    <div class="wrap">
+      ${cloud==="err"?`<p class="hint" id="syncerr" style="color:var(--bad)">${esc(syncText())}</p>`:""}
+      <section class="field-row"><span class="label">Notebook</span>
+        ${nbTile()}
+        ${CORR.length?`<button class="fixline" id="fixl">${icon("pen")}<span>${plural(CORR.length,"word")} to fix in your notebook</span>${icon("chev")}</button>`:""}
+      </section>
+      <section class="field-row"><span class="label">Textbook · Focus</span>
+        ${unitsHtml()}
+      </section>
+    </div>`,
+    dock:contDock(),
+    after(){$$("[data-deck]").forEach(b=>b.onclick=()=>openDeckSheet(b.dataset.deck));
+      $$("[data-unit]").forEach(b=>b.onclick=()=>{const n=b.dataset.unit;OPEN_UNIT=openUnit()===n?"":n;keep(render)});
+      const ol=$("#older");if(ol)ol.onclick=()=>{SHOW_OLDER=!SHOW_OLDER;keep(render)};
+      const fl=$("#fixl");if(fl)fl.onclick=()=>go("fix");
+      $("#cont").onclick=()=>startQuiz(contPref(),false);
+      $("#conttxt").onclick=()=>openDeckSheet(contPref().deck)}}};
+SCREENS.home.label="Home";
+
+/* ---------- Mistakes ---------- */
+SCREENS.mistakes=()=>{const L=allMistakes();const tot=L.reduce((a,x)=>a+x.n,0);
+  return{tab:"mistakes",html:appbar("Mistakes",{noBack:true})+`<div class="wrap">
+    <header class="pagehead"><h1>${plural(tot,"word")} to practise</h1><p class="muted">Words you got wrong and haven't got right twice since.</p></header>
+    ${L.length?`<div class="list">${L.map(x=>`<button class="rowlink" data-mist="${esc(x.d)}"><span class="mic">${icon("redo")}</span>
+      <span class="txt"><b>${esc(DECKS[x.d].name)}</b><span>${x.d==="nb"?"Vocabulary notebook":"Unit "+esc(DECKS[x.d].unit)}</span></span><span class="count-bad">${x.n}</span>${icon("chev","chev")}</button>`).join("")}</div>`
+      :`<div class="card" style="text-align:center;padding:28px 16px"><div class="done-mark" style="margin-top:0">${icon("check")}</div><h2 style="margin-top:12px">No mistakes</h2><p class="muted">Nice work. New mistakes show up here.</p></div>`}
+    <p class="hint">Mistakes come back here until you get them right twice.</p></div>`,
+    after(){$$("[data-mist]").forEach(b=>b.onclick=()=>{const d=b.dataset.mist;const last=(S.pref.lastByDeck||{})[d];
+      const p=Object.assign({},S.pref,{deck:d});
+      if(last&&modesFor(d).some(m=>m.mode===last.mode)){p.mode=last.mode;p.dir=last.dir}
+      else if(!modesFor(d).some(m=>m.mode===p.mode&&(p.mode!=="choice"||!twoDir(d)||m.dir===p.dir))){p.mode="choice";p.dir="en"}
+      if(d==="nb"){p.nbLast=0;p.nbFrom=1;p.nbTo=""}startQuiz(p,true)})}}};
+SCREENS.mistakes.label="Mistakes";
+
+/* ---------- Progress ---------- */
+SCREENS.progress=()=>{const sk=streak();const days=new Set(S.days);const d0=new Date();
+  const wk=Array.from({length:7},(_,i)=>{const d=new Date(d0);d.setDate(d0.getDate()-6+i);return{l:"MTWTFSS"[(d.getDay()+6)%7],on:days.has(ymd(d)),today:i===6}});
+  const decks=["nb",...realDecks()];const log=S.log.slice(-6).reverse();
+  return{tab:"progress",html:appbar("Progress",{noBack:true})+`<div class="wrap">
+    <div class="stats"><div class="stat"><b>${sk}</b><span>${sk===1?"day":"days"} in a row</span></div><div class="stat"><b>${totalLearned()}</b><span>words learned</span></div>
+      <button class="stat bad" id="pm"><b>${totalMistakes()}</b><span>mistakes ›</span></button></div>
+    <section class="card"><div class="section-title"><span class="label">This week</span><span class="hint">${wk.filter(x=>x.on).length} of 7 days</span></div>
+      <div class="week">${wk.map(x=>`<div>${x.l}<i class="${x.on?"on":""}${x.today?" today":""}"></i></div>`).join("")}</div></section>
+    <section class="card"><span class="label">Learned</span>${decks.map(d=>{const c=counts(d,DECKS[d].items);return `<div class="deckbar"><b>${esc(DECKS[d].name)}${d==="nb"?"":' <span class="muted" style="font-weight:400">· Unit '+esc(DECKS[d].unit)+"</span>"}</b><span>${c.learned} / ${c.total}</span><div class="bar"><i style="width:${pct(c.learned,c.total)}%"></i></div></div>`}).join("")}</section>
+    ${log.length?`<section class="card"><span class="label">Recent practice</span><ul class="log">${log.map(l=>`<li><span>${esc(l.when)} · ${esc(l.what)}</span><b>${l.ok}/${l.n}</b></li>`).join("")}</ul></section>`:""}
+    <p class="hint">A word counts as learned after 3 right answers in a row.</p>
+    <p class="hint" id="sync">${esc(syncText())}</p></div>`,
+    after(){$("#pm").onclick=()=>{TAB="mistakes";resetTo("mistakes",{root:true})}}}};
+SCREENS.progress.label="Progress";
+
+/* ---------- Fix your notebook ---------- */
+SCREENS.fix=()=>({html:appbar("Fix your notebook")+`<div class="wrap">
+    <header class="pagehead"><h1>${CORR.length?plural(CORR.length,"word")+" to fix":"All fixed"}</h1>
+      <p class="muted">${CORR.length?"Correct these words in your paper notebook, then tap Fixed.":"Nice work. Your notebook matches the app."}</p></header>
+    ${CORR.length?`<div class="list">${CORR.map(c=>`<div class="rowlink fixrow"><div class="fixcard">
+      <span class="nr">${c.num?"#"+esc(c.num):"No number"}</span>
+      <span>You wrote: <s>${esc(c.wrote)}</s></span><span class="ok">Correct: ${esc(c.correct)}</span>${c.note?`<span class="note-line">${esc(c.note)}</span>`:""}</div>
+      <button class="btn soft" data-fixed="${esc(c.id)}" style="min-height:44px;padding:8px 14px">${icon("check")} Fixed</button></div>`).join("")}</div>`:""}
+  </div>`,
+  after(){$$("[data-fixed]").forEach(b=>b.onclick=()=>{const id=b.dataset.fixed;CORR=CORR.filter(c=>String(c.id)!==id);
+    try{localStorage.setItem("maya-corr-cache",JSON.stringify(CORR))}catch(e){}
+    keep(render);if(GAS)call("markCorrectionFixed",id).catch(()=>toast("Could not save it online. It may show up again."))})}});
+SCREENS.fix.label="Back";
+
+/* ---------- questions (logic kept from the previous version) ---------- */
+const PREP_POOL=["in","on","at","of","about","for","to","with","from","by"];
+function distractors(d,it,n,keyFn){
+  const D=DECKS[d];let base=D.items;
+  if(d==="nb"){const r=nbRange(Q?Q.p:S.pref);if(r.length>=8)base=r}
+  else if(D.type==="vocab"&&base.length<8)base=base.concat(realDecks().filter(x=>x!==d&&DECKS[x].type==="vocab").flatMap(x=>DECKS[x].items));
+  const mine=norm(keyFn(it).t);
+  let pool=base.filter(x=>x!==it&&norm(keyFn(x).t)!==mine);
+  const t=bgTokens(it.bg);pool=pool.filter(x=>![...bgTokens(x.bg)].some(w=>t.has(w)));
+  const seen=new Set();
+  return shuffle(pool).filter(x=>{const k=norm(keyFn(x).t);if(seen.has(k))return false;seen.add(k);return true}).slice(0,n).map(keyFn);
+}
+function build(d,it,mode,dir){
+  const D=DECKS[d];
+  if(D.mix)return build(it.d,it.it,mode,"en");
+  if(D.type==="vocab"){
+    const q=mode==="type"?{ask:"Write the word in English",prompt:it.bg,lang:"bg",sub:it.def,accept:[it.en],answer:it.en,say:it.en}
+      :dir==="bg"?{ask:"How do you say it in English?",prompt:it.bg,lang:"bg",sub:it.def,subHidden:true,answer:it.en,extra:it.def,say:it.en,
+        options:shuffle([{t:it.en,ok:true},...distractors(d,it,3,x=>({t:x.en}))])}
+      :{ask:"What does it mean?",prompt:it.en,lang:"en",sayPrompt:it.en,answer:it.bg,extra:it.def,say:it.en,
+        options:shuffle([{t:it.bg,ok:true},...distractors(d,it,3,x=>({t:x.bg}))])};
+    q.dtype="vocab";return q;
+  }
+  if(D.type==="nb"){
+    const tag="#"+it.id+" · ";let q;
+    if(mode==="type"){
+      const same=DECKS.nb.items.filter(x=>x.bg===it.bg);const acc=[...new Set(same.flatMap(x=>variants(x.en)))];
+      const first=cleanSay(it.en);
+      q={ask:tag+"Write the word in English",prompt:it.bg,lang:"bg",sub:"Starts with “"+first[0]+"”, "+first.replace(/[^a-z]/gi,"").length+" letters",subHidden:true,accept:acc,answer:it.en,say:cleanSay(it.en),
+        extra:same.length>1?"Also correct: "+same.filter(x=>x!==it).map(x=>x.en).join(", "):""};
+    }else if(dir==="bg")q={ask:tag+"How do you say it in English?",prompt:it.bg,lang:"bg",answer:it.en,say:cleanSay(it.en),
+      options:shuffle([{t:it.en,ok:true},...distractors(d,it,3,x=>({t:x.en}))])};
+    else q={ask:tag+"What does it mean?",prompt:it.en,lang:"en",sayPrompt:cleanSay(it.en),answer:it.bg,say:cleanSay(it.en),
+      options:shuffle([{t:it.bg,ok:true},...distractors(d,it,3,x=>({t:x.bg}))])};
+    q.dtype="nb";return q;
+  }
+  if(D.type==="opposites"){
+    const base={dtype:"opposites",ask:"What is the opposite?",prompt:it.base,lang:"en",sayPrompt:it.base,sub:it.bg,subHidden:true,accept:[it.opp],answer:it.opp,extra:it.bg,say:it.opp};
+    if(mode==="choice"){
+      const pre=["un","in","im","dis"];if(/^r/.test(it.base))pre.push("ir");if(/^l/.test(it.base))pre.push("il");
+      const right=it.opp;let wrong=pre.map(p=>p+it.base).filter(w=>w!==right&&!(it.ex||[]).some(x=>w===x+it.base));
+      if(/^(im|ir|il)/.test(right))wrong.unshift("i"+it.base); /* spelling trap: single letter */
+      wrong=[...new Set(wrong)];
+      const picked=(/^(im|ir|il)/.test(right)?[wrong[0],...shuffle(wrong.slice(1)).slice(0,2)]:shuffle(wrong).slice(0,3));
+      base.options=shuffle([{t:right,ok:true},...picked.map(t=>({t}))]);
+    }
+    return base;
+  }
+  /* prep */
+  const filled=it.s.replace("___","<mark>"+esc(it.acc[0])+"</mark>");
+  const o={dtype:"prep",ask:"Which preposition is missing?",prompt:it.s,lang:"en",sentence:true,sub:it.bg,subHidden:true,accept:it.acc,answer:it.label,
+    answerHtml:filled,extra:it.acc.length>1?"Also correct: "+it.acc.slice(1).join(", "):"",say:it.s.replace("___",it.acc[0])};
+  if(mode==="choice"){const wrong=shuffle(PREP_POOL.filter(p=>!it.acc.includes(p))).slice(0,3);
+    o.options=shuffle([{t:it.acc[0],ok:true},...wrong.map(t=>({t}))])}
+  return o;
+}
+function checkTyped(input,accept){
+  const n=norm(input);if(!n)return "empty";
+  for(const a of accept){const t=norm(a);if(n===t)return "ok";if(n.replace(/[-\s]/g,"")===t.replace(/[-\s]/g,""))return "hyphen"}
+  for(const a of accept){const t=norm(a);if(t.length>3&&lev(n,t)===1)return "near"}
+  return "bad";
+}
+function itemLabel(d,it){const D=DECKS[d];if(!D||!it)return "";if(D.mix)return itemLabel(it.d,it.it);
+  return D.type==="nb"?it.en+" (#"+it.id+")":D.type==="opposites"?it.opp:D.type==="prep"?it.label:it.en}
+
+/* ---------- session ---------- */
+let Q=null;
+function pick(d,p,onlyMistakes){let items=deckItems(d,p);if(onlyMistakes)items=items.filter(x=>isMistake(d,x.id));
+  const sc=items.map(it=>{const s=st(d,it.id);return{it,k:(s?s.b:-1)+Math.random()*1.6}}).sort((a,b)=>a.k-b.k);
+  return shuffle(sc.slice(0,onlyMistakes||p.n==="all"?sc.length:p.n).map(x=>x.it))}
+/* p: settings; onlyMistakes: only words to review; items: a ready list (e.g. "Practise these again") */
+function startQuiz(p,onlyMistakes,items){
+  p=Object.assign({},S.pref,p);delete p._custom;
+  const d=p.deck;if(!DECKS[d]){toast("This set is not available right now.");return}
+  if(!modesFor(d).some(m=>m.mode===p.mode)){p.mode="choice";p.dir="en"}
+  const list=items||pick(d,p,onlyMistakes);
+  if(!list.length){toast(onlyMistakes?"No mistakes to practise here.":"No words to practise here.");return}
+  const lbd=Object.assign({},S.pref.lastByDeck,{[d]:{mode:p.mode,dir:p.dir}});
+  if(!onlyMistakes&&!items)S.pref=Object.assign({},p);
+  S.pref.lastByDeck=lbd;if(p.flashDir)S.pref.flashDir=p.flashDir;
+  if(!S.days.includes(today())){S.days.push(today());S.days=S.days.slice(-60)}
+  save();
+  Q={p,deck:d,mode:p.mode,dir:p.dir,mistakes:!!onlyMistakes,queue:list.map(it=>({it,retry:false})),i:0,first:new Map(),
+    items:new Map(list.map(it=>[it.id,it])),total:list.length};
+  closeSheet(true);go("quiz")}
+function answer(ok){
+  const cur=Q.queue[Q.i];const id=cur.it.id;
+  if(!Q.first.has(id)){Q.first.set(id,ok);grade(Q.deck,id,ok)}
+  if(!ok&&!cur.retry)Q.queue.push({it:cur.it,retry:true});
+}
+function next(){Q.i++;if(!Q.queue[Q.i]){finish();return}render()}
+
+SCREENS.quiz=()=>{
+  if(!Q)return SCREENS.home();
+  const cur=Q.queue[Q.i];const it=cur.it;const q=build(Q.deck,it,Q.mode,Q.dir);Q.q=q;Q.answered=false;
+  const promptHtml=q.sentence?`<div class="big sentence">${esc(q.prompt).replace("___",'<span class="gap" id="gap">&nbsp;</span>')}</div>`
+    :`<div class="big" lang="${q.lang}">${esc(q.prompt)}</div>${q.sayPrompt?sayBtn(q.sayPrompt):""}`;
+  const sub=q.sub?(q.subHidden?`<button class="hint-btn" id="hint">Hint</button><p class="def muted" id="subt" hidden>${esc(q.sub)}</p>`:`<p class="def muted" lang="en">${esc(q.sub)}</p>`):"";
+  let body="";
+  if(Q.mode==="choice"){
+    const short=q.options.every(o=>o.t.length<18);
+    body=`<div class="opts${short?" short":""}" role="group">${q.options.map((o,i)=>`<button class="opt" data-i="${i}"><kbd>${i+1}</kbd><span>${esc(o.t)}</span></button>`).join("")}</div>`;
+  }else if(Q.mode==="type"){
+    body=`<form class="typebox" id="tf" autocomplete="off"><input id="ti" type="text" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" aria-label="Your answer" placeholder="${q.dtype==="prep"?"preposition":"in English"}"><button class="btn primary" type="submit">Check</button></form>`;
+  }
+  return{html:`<div class="wrap" style="padding-top:calc(12px + env(safe-area-inset-top,0px))">
+    <div class="qtop"><button class="backbtn" id="quit">${icon("back")}Stop</button><div class="bar"><i style="width:${pct(Q.first.size,Q.total)}%"></i></div><span class="qcount">${Math.min(Q.first.size+1,Q.total)} / ${Q.total}</span></div>
+    <article class="qcard${Q.mode==="flash"?" tappable":""}" id="card">
+      <div class="ask"><span>${esc(q.ask)}</span><span>${cur.retry?"Again":""}</span></div>
+      <div class="prompt">${promptHtml}</div>
+      ${sub}
+      <div id="qback"></div>
+      ${Q.mode==="flash"?'<span class="tap-hint" id="taph">Tap the card to turn it over</span>':""}
+    </article>
+    ${body}</div>`,
+    dock:Q.mode==="flash"?`<button class="btn primary block" id="flip">Turn it over</button>`:"",
+    after(){
+      if(Q.mode==="flash")$("#card").onclick=e=>{if(!e.target.closest("button")&&$("#flip"))flip()};
+      $("#quit").onclick=confirmStop;
+      const h=$("#hint");if(h)h.onclick=()=>{$("#subt").hidden=false;h.hidden=true};
+      if(Q.mode==="choice")$$(".opt").forEach(b=>b.onclick=()=>choose(+b.dataset.i));
+      if(Q.mode==="type"){const f=$("#tf");f.onsubmit=e=>{e.preventDefault();typed()};setTimeout(()=>{try{$("#ti").focus()}catch(e){}},30)}
+      if(Q.mode==="flash")$("#flip").onclick=flip;
+    }}};
+SCREENS.quiz.label="Practice";
+function revealHtml(q){
+  const ans=q.answerHtml?`<p class="def" lang="en" style="font-weight:700">${q.answerHtml}</p>`:`<div class="prompt" style="margin:0"><span class="big" style="font-size:1.5rem"><mark>${esc(q.answer)}</mark></span>${q.say&&q.lang==="bg"||q.dtype==="opposites"?sayBtn(q.say):""}</div>`;
+  const extra=q.extra?`<p class="def muted"${/[a-z]/i.test(q.extra)&&!/[а-я]/i.test(q.extra)?' lang="en"':""}>${esc(q.extra)}</p>`:"";
+  const sayS=q.sentence?sayBtn(q.say):"";
+  return `<div class="back">${ans}${extra}${sayS}</div>`;
+}
+function showBack(){$("#qback").innerHTML=revealHtml(Q.q);const h=$("#hint");if(h)h.hidden=true;
+  if(Q.q.sentence){const g=$("#gap");if(g)g.textContent=Q.q.accept[0]}}
+function feedback(ok,msg){
+  Q.answered=true;
+  setDock(`<div class="fb ${ok?"ok":"no"}" role="status"><strong>${ok?"Correct!":"Not quite"}</strong>${msg?`<span>${msg}</span>`:""}</div>
+  <button class="btn primary block" id="nx">Next</button>`);
+  showBack();
+  const nx=$("#nx");nx.onclick=next;setTimeout(()=>{try{nx.focus()}catch(e){}},30);
+}
+function choose(i){
+  if(Q.answered)return;const q=Q.q;const o=q.options[i];
+  $$(".opt").forEach((b,j)=>{b.disabled=true;if(q.options[j].ok)b.classList.add("right");else if(j===i)b.classList.add("wrong")});
+  answer(!!o.ok);feedback(!!o.ok,o.ok?"":"You will see it again soon.");
+}
+function typed(){
+  if(Q.answered)return;const inp=$("#ti");const r=checkTyped(inp.value,Q.q.accept);
+  if(r==="empty"){inp.focus();return}
+  const ok=r==="ok"||r==="hyphen";inp.classList.add(ok?"right":"wrong");inp.readOnly=true;try{inp.blur()}catch(e){}
+  document.querySelector("#tf button").disabled=true;
+  answer(ok);
+  feedback(ok,r==="hyphen"?"Watch the hyphen: it is spelt "+esc(Q.q.accept[0])+".":r==="near"?"Almost! One letter is wrong. Check the spelling below.":ok?"":"You will see it again soon.");
+}
+function flip(){
+  showBack();const th=$("#taph");if(th)th.hidden=true;$("#card").classList.remove("tappable");
+  setDock(`<div class="duo"><button class="btn warn" id="no">I don't know</button><button class="btn primary" id="yes">I know</button></div>`);
+  $("#no").onclick=()=>{answer(false);next()};$("#yes").onclick=()=>{answer(true);next()};
+}
+function confirmStop(){
+  openSheet(`<div class="sheet-head"><div class="txt"><h2>Stop practising?</h2><p>${Q.first.size?`You answered ${Q.first.size} of ${Q.total}. Your answers so far are saved.`:"You haven't answered any words yet."}</p></div></div>
+    <div class="row" style="display:flex;gap:8px"><button class="btn ghost" id="stopy" style="flex:1">Stop</button><button class="btn primary" id="stopn" style="flex:1">Keep going</button></div>`,
+    sh=>{sh.querySelector("#stopn").onclick=()=>closeSheet();
+      sh.querySelector("#stopy").onclick=()=>{closeSheet(true);if(Q.first.size)finish();else{Q=null;back()}}})}
+document.addEventListener("keydown",e=>{
+  const t=top_();if(!Q||!t||t.name!=="quiz"||SHEET_OPEN)return;
+  if(e.target.tagName==="BUTTON"||e.target.tagName==="INPUT"&&!Q.answered)return;
+  if(Q.mode==="choice"&&!Q.answered&&/^[1-4]$/.test(e.key)){choose(+e.key-1)}
+  else if(e.key==="Enter"&&Q.answered){e.preventDefault();next()}
+  else if(e.key===" "&&Q.mode==="flash"&&$("#flip")){e.preventDefault();flip()}
+});
+
+/* ---------- results ---------- */
+const MIN_LOG=3; /* shorter sessions are not written to the Log sheet */
+function finish(){
+  const d=Q.deck,D=DECKS[d];const n=Q.first.size;const ok=[...Q.first.values()].filter(Boolean).length;
+  const wrongIds=[...Q.first.entries()].filter(([,v])=>!v).map(([k])=>k);
+  const wrong=wrongIds.map(id=>itemLabel(d,Q.items.get(id)));
+  const now=new Date();const when=now.toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit"})+" "+now.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
+  const dirTxt=twoDir(d)&&Q.mode!=="type"?(Q.dir==="en"?", EN→BG":", BG→EN"):"";
+  const deckName=D.mix?"Unit "+D.unit+" (all sets)":d==="nb"?"Notebook "+nbLabel(Q.p):D.name;
+  const what=deckName+" · "+modeTitle(d,Q.mode,Q.dir)+(Q.mistakes?" (mistakes)":"");
+  const logged=n>=MIN_LOG;
+  if(logged){S.log.push({when,what,ok,n,ts:Date.now()});S.log=S.log.slice(-30);save();
+    if(GAS)call("logSession",{deck:deckName,mode:modeTitle(d,Q.mode,Q.dir),dir:dirTxt.replace(", ",""),mistakesOnly:Q.mistakes,ok,n,wrong:wrong.join(", ")}).catch(()=>{})}
+  const R={d,ok,n,wrong,wrongItems:wrongIds.map(id=>Q.items.get(id)).filter(Boolean),what,p:Q.p,logged,when};
+  Q=null;replace("result",R);
+}
+SCREENS.result=R=>{
+  const d=R.d;const dItems=deckItems(d,R.p);const learned=dItems.filter(x=>isLearned(d,x.id)).length;const mist=dItems.filter(x=>isMistake(d,x.id)).length;
+  const report=`${NAME?NAME+" · ":""}English
+${R.when} · ${R.what}
+Score: ${R.ok}/${R.n} at the first try
+${R.wrong.length?"Mistakes: "+R.wrong.join(", "):"No mistakes!"}
+Learned (${DECKS[d]?DECKS[d].name:""}): ${learned}/${dItems.length} · To review: ${mist}
+Days in a row: ${streak()}`;
+  const praise=!R.n?"":R.ok===R.n?"Perfect!":R.ok/R.n>=.8?"Very good!":R.ok/R.n>=.5?"Good work, keep going!":"These words need a bit more practice";
+  return{html:`<div class="wrap" style="padding-top:calc(24px + env(safe-area-inset-top,0px))">
+    <header class="pagehead"><span class="label">${esc(R.what)}</span><div class="score">${R.ok}<span class="muted" style="font-size:.5em"> / ${R.n}</span></div><h1 style="font-size:1.4rem">${praise}</h1></header>
+    ${R.wrong.length?`<section class="field-row"><span class="label">Words to review</span><ul class="words">${R.wrong.map(w=>`<li lang="en">${esc(w)}</li>`).join("")}</ul></section>
+      <button class="btn warn block" id="rv">${icon("redo")} Practise ${R.wrong.length===1?"this word":"these "+R.wrong.length} again</button>`:""}
+    ${GAS?`<p class="hint">${R.logged?"Your results are saved. Dad can see them.":"Your answers are saved."}</p>`:`<section class="field-row"><span class="label">Report</span>
+      <textarea id="rep" rows="6" readonly>${esc(report)}</textarea>
+      <button class="btn ghost" id="copy">Copy the report</button>
+      <p class="hint" id="cpn">Then send it to Dad on Viber.</p></section>`}
+    </div>`,
+    dock:`<div class="row"><button class="btn ghost" id="hm">${icon("home")} Home</button><button class="btn primary" id="again">${R.p.n==="all"?"Again":R.p.n+" more"}</button></div>`,
+    after(){$("#hm").onclick=goHome;
+      $("#again").onclick=()=>{NAV.stack.pop();startQuiz(R.p,false)};
+      const rv=$("#rv");if(rv)rv.onclick=()=>{NAV.stack.pop();startQuiz(R.p,false,R.wrongItems)};
+      const cp=$("#copy");if(cp)cp.onclick=async()=>{const t=$("#rep");try{await navigator.clipboard.writeText(t.value);$("#cpn").textContent="Copied! Now send it to Dad on Viber."}
+        catch(e){t.focus();t.select();$("#cpn").textContent="The text is selected. Tap Copy and send it to Dad."}}}}};
+SCREENS.result.label="Results";
+
+/* ---------- Add words: photo -> extractPage (Claude) -> check -> save ---------- */
+const ADD={};
+function startAdd(){Object.assign(ADD,{src:null,img:null,rows:[],sec:null,editSec:false,err:"",busy:false,saving:false,saved:null,switched:false,showDups:false,token:(ADD.token||0)+1});go("addSource")}
+const lc=s=>String(s||"").trim().toLowerCase();
+const pairTxt=(a,b)=>b?a+" – "+b:a;
+const baseNum=id=>String(parseInt(id,10)||"");
+function readPhoto(file){return new Promise((res,rej)=>{
+  const url=URL.createObjectURL(file);const img=new Image();
+  img.onload=()=>{try{const M=1600;let w=img.naturalWidth,h=img.naturalHeight;const k=Math.min(1,M/Math.max(w,h));w=Math.round(w*k);h=Math.round(h*k);
+    const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(img,0,0,w,h);URL.revokeObjectURL(url);res(c.toDataURL("image/jpeg",.85))}
+    catch(e){URL.revokeObjectURL(url);rej(e)}};
+  img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("image"))};img.src=url})}
+const srcLabel=()=>ADD.src==="nb"?"Notebook":"Textbook";
+
+SCREENS.addSource=()=>({html:appbar("Add words",{backLabel:"Cancel"})+`<div class="wrap">
+    <header class="pagehead"><h1>Where are the words from?</h1><p class="muted">Take a photo of the page. We read the words and you check them.</p></header>
+    <button class="src" data-src="nb" aria-pressed="${ADD.src==="nb"}"><span class="ic">${icon("note")}</span><span><b>My notebook</b><span>${nbAll().length?"New words get the next numbers, from #"+(nbLastNum()+1):"Your handwritten word list"}</span></span></button>
+    <button class="src" data-src="tb" aria-pressed="${ADD.src==="tb"}"><span class="ic">${icon("book")}</span><span><b>Textbook</b><span>We read the unit and section from the page</span></span></button>
+    ${GAS?"":`<p class="hint" style="color:var(--bad)">Adding words works only in the online app.</p>`}</div>`,
+  dock:`<button class="btn primary block" id="next" ${ADD.src&&GAS?"":"disabled"}>${icon("camera")} Next: take a photo</button>`,
+  after(){$$("[data-src]").forEach(b=>b.onclick=()=>{ADD.src=b.dataset.src;keep(render)});
+    $("#next").onclick=()=>go("addPhoto")}});
+SCREENS.addSource.label="Add words";
+
+SCREENS.addPhoto=()=>({html:appbar("Photo")+`<div class="wrap">
+    <header class="pagehead"><span class="label">${esc(srcLabel())}</span><h1>Take a photo of the page</h1></header>
+    <label class="camera filebtn"><span class="ic">${icon("camera")}</span><b style="font-size:1.1rem">Take a photo</b><span class="muted">Whole page, good light, phone flat above it</span>
+      <input type="file" accept="image/*" capture="environment" id="cam" aria-label="Take a photo"></label>
+    <label class="btn soft block filebtn">${icon("image")} Choose from Photos<input type="file" accept="image/*" id="lib" aria-label="Choose from Photos"></label>
+    <p class="hint">One page at a time. Make sure the numbers and both columns are in the photo.</p></div>`,
+  after(){[$("#cam"),$("#lib")].forEach(inp=>inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;
+    readPhoto(f).then(data=>{ADD.img=data;ADD.err="";ADD.busy=false;go("addReading")}).catch(()=>toast("This photo could not be opened. Try another one."))})}});
+SCREENS.addPhoto.label="Photo";
+
+SCREENS.addReading=()=>({html:appbar(ADD.err?"Photo":"Reading",{backLabel:"Cancel",backId:"rdcancel"})+`<div class="wrap">
+    <header class="pagehead"><span class="label">${esc(srcLabel())}</span><h1>${ADD.err?"We couldn't read this page.":"Reading the words..."}</h1></header>
+    <div class="reading"><img src="${ADD.img}" alt="Your photo">${ADD.err?"":'<div class="scan"></div>'}</div>
+    <p class="hint" style="text-align:center">${ADD.err?esc(ADD.err):"This takes about 20 seconds."}</p></div>`,
+  dock:ADD.err?`<button class="btn primary block" id="retry">${icon("camera")} Try again</button>`:"",
+  after(){$("#rdcancel").onclick=()=>{ADD.token++;ADD.busy=false;ADD.err="";back()};
+    if(ADD.err){$("#retry").onclick=()=>{ADD.err="";back()};return}
+    if(!ADD.busy)runExtract()}});
+SCREENS.addReading.label="Photo";
+function runExtract(){const tok=++ADD.token;ADD.busy=true;
+  call("extractPage",ADD.img.split(",")[1],"image/jpeg",ADD.src==="nb"?"notebook":"textbook").then(txt=>{
+    if(tok!==ADD.token)return;ADD.busy=false;
+    let r=null;try{r=JSON.parse(txt)}catch(e){}
+    const hasNb=r&&r.notebook&&r.notebook.entries&&r.notebook.entries.length,hasTb=r&&r.textbook&&r.textbook.words&&r.textbook.words.length;
+    if(!hasNb&&!hasTb){ADD.err="We couldn't find words on this page. Try a sharper photo of the whole page.";render();return}
+    const type=r.page_type==="textbook"&&hasTb||!hasNb?"tb":"nb";
+    ADD.switched=type!==ADD.src;ADD.src=type;
+    prepareRows(r);replace("addReview")})
+  .catch(()=>{if(tok!==ADD.token)return;ADD.busy=false;ADD.err="Something went wrong. Check the connection and try again.";render()})}
+function prepareRows(r){
+  if(ADD.src==="nb"){
+    ADD.rows=r.notebook.entries.map(e=>({kind:"nb",num:e.num||"",en:e.en||"",bg:e.bg||"",wen:e.written_en||e.en||"",wbg:e.written_bg||"",
+      status:e.status,note:e.note||"",options:(e.options||[]).filter(o=>o.en),resolved:e.status==="ok"||e.status==="fixed"}));
+    ADD.rows.forEach(x=>{if(x.status==="choose"&&x.options.length<2)x.resolved=true});
+    ADD.sec=null;
+  }else{
+    const t=r.textbook;const s=t.section||{};
+    let unit=s.unit?String(s.unit).replace(/\D/g,""):"";let lesson=s.lesson?String(s.lesson).trim():"";
+    if(!unit&&/^\d+\./.test(lesson))unit=lesson.split(".")[0];
+    if(lesson&&!new RegExp("^"+unit+"\\.\\d+$").test(lesson))lesson="";
+    ADD.sec={unit,lesson,title:s.title||"",low:s.confidence!=="high"};
+    const exist=lessonDeck(unit,lesson);if(exist)ADD.sec.title=DECKS[exist].name;
+    ADD.editSec=!unit||!lesson;
+    ADD.rows=t.words.map(w=>({kind:"tb",en:w.en||"",bg:w.bg||"",def:w.def||"",pos:w.pos||"",keep:w.core!==false}));
+  }
+}
+const lessonDeck=(unit,lesson)=>{const id="L"+lesson;return lesson&&DECKS[id]&&DECKS[id].unit===String(unit)?id:null};
+function nbDup(r){const all=nbAll();let b=baseNum(r.num);
+  if(!String(r.num).trim()){const i=ADD.rows.indexOf(r);for(let k=i-1;k>=0;k--){const n=baseNum(ADD.rows[k].num);if(n){b=n;break}}}
+  return all.find(x=>x.id===String(r.num).trim()&&String(r.num).trim())||all.find(x=>b&&baseNum(x.id)===b&&lc(x.en)===lc(r.en))||null}
+function unitWords(unit){const u=unitOf(unit);const s=new Set();if(!u)return s;
+  u.sets.forEach(d=>DECKS[d].items.forEach(it=>[it.en,it.opp,it.label].forEach(v=>{if(v)s.add(lc(v))})));return s}
+function rowState(r,uw){
+  if(r.kind==="nb"){const dup=r.en.trim()?nbDup(r):null;
+    return{dup,block:!dup&&(r.status==="choose"||r.status==="unreadable")&&!r.resolved,save:!!r.en.trim()&&!dup}}
+  const dup=uw&&uw.has(lc(r.en));return{dup,block:false,save:r.keep&&!!r.en.trim()&&!dup}}
+const secOk=()=>!!(ADD.sec&&ADD.sec.unit&&ADD.sec.lesson&&new RegExp("^"+ADD.sec.unit+"\\.\\d+$").test(ADD.sec.lesson));
+
+function secCard(){const s=ADD.sec;const units=Math.max(10,...UNITS.map(u=>u.num));
+  const ex=s.unit?(unitOf(s.unit)||{sections:[]}).sections.flatMap(x=>x.lessons):[];
+  const lessons=s.unit?[...new Set([...ex,...[1,2,3,4,5,6].map(k=>s.unit+"."+k)])].filter(l=>/^\d+\.\d+$/.test(l)).sort((a,b)=>a.localeCompare(b,"en",{numeric:true})):[];
+  const exist=lessonDeck(s.unit,s.lesson);
+  const head=`<div class="goes"><div class="txt"><span class="label">Goes to</span><b>${secOk()?"Unit "+esc(s.unit)+" · "+esc(s.lesson)+(s.title?" · "+esc(s.title):""):"Pick the unit and section"}</b>
+    ${secOk()&&s.low&&!ADD.editSec?'<span class="hint">We are not sure about the section. Is it right?</span>':""}</div>
+    ${ADD.editSec?"":`<button class="btn soft" id="chsec" style="min-height:44px;padding:8px 14px">Change</button>`}</div>`;
+  if(!ADD.editSec)return `<section class="card field-row">${head}</section>`;
+  return `<section class="card field-row">${head}
+    <span class="label" style="margin-top:6px">Unit</span>
+    <div class="chips">${Array.from({length:units},(_,i)=>String(i+1)).map(n=>`<button class="chip" data-su="${n}" aria-pressed="${s.unit===n}">${n}</button>`).join("")}</div>
+    ${s.unit?`<span class="label" style="margin-top:6px">Section</span>
+    <div class="chips">${lessons.map(l=>`<button class="chip" data-sl="${l}" aria-pressed="${s.lesson===l}">${l}</button>`).join("")}</div>`:""}
+    ${secOk()?`<span class="label" style="margin-top:6px">Name of the set</span>
+    <input class="field" id="sectitle" value="${esc(s.title)}" placeholder="e.g. Sport" ${exist?"disabled":""}>
+    ${exist?`<p class="hint">The words are added to the set “${esc(DECKS[exist].name)}”.</p>`:""}
+    <button class="btn primary" id="secdone" style="min-height:44px">Done</button>`:""}
+  </section>`}
+function rowHtml(r,i,uw){const stt=rowState(r,uw);
+  if(r.kind==="tb"){const note=stt.dup?`<div class="note info">${icon("alert")}<span>Already in Unit ${esc(ADD.sec.unit)}. It will not be added again.</span></div>`:"";
+    return `<div class="wrow tb${stt.save?"":" off"}" data-row="${i}"><button class="check" data-keep aria-pressed="${r.keep&&!stt.dup}" aria-label="Add this word" ${stt.dup?"disabled":""}>${icon("check")}</button>
+      <div class="pair"><input value="${esc(r.en)}" aria-label="English" data-f="en" lang="en"><input value="${esc(r.bg)}" aria-label="Bulgarian" data-f="bg" placeholder="Bulgarian" lang="bg"></div>
+      <button class="iconbtn" data-del aria-label="Remove">${icon("trash")}</button>${note}</div>`}
+  const wrote=pairTxt(r.wen,lc(r.wbg)!==lc(r.bg)||!r.bg?r.wbg:"");
+  let note="";
+  if(stt.dup)note=`<div class="note info">${icon("alert")}<span>Already in your notebook as #${esc(stt.dup.id)} ${esc(stt.dup.en)}. It will not be added again.</span></div>`;
+  else if(r.status==="choose"&&!r.resolved)note=`<div class="note">${icon("alert")}<span>${esc(r.note||"Which one is right?")} You wrote “${esc(pairTxt(r.wen,r.wbg))}”.</span></div>
+    <div class="opts2">${r.options.slice(0,2).map((o,k)=>`<button class="chip" data-opt="${k}">${esc(pairTxt(o.en,o.bg))}</button>`).join("")}<button class="chip" data-opt="both">Both</button></div>`;
+  else if(r.status==="unreadable"&&!r.resolved)note=`<div class="note">${icon("alert")}<span>${esc(r.note||"We couldn't read all of it.")}</span><button class="textbtn" data-okrow>Looks right</button></div>`;
+  else if(r.status==="fixed"||r.status==="choose")note=`<div class="note info">${icon("pen")}<span>You wrote “${esc(r.status==="choose"?pairTxt(r.wen,r.wbg):wrote)}”. ${esc(r.note)}</span></div>`;
+  return `<div class="wrow${stt.block?" flag":""}${stt.dup?" off":""}" data-row="${i}">
+    <input class="num" value="${esc(r.num)}" aria-label="Number" data-f="num" placeholder="#">
+    <div class="pair"><input value="${esc(r.en)}" aria-label="English" data-f="en" lang="en"><input value="${esc(r.bg)}" aria-label="Bulgarian" data-f="bg" placeholder="Bulgarian" lang="bg"></div>
+    <button class="iconbtn" data-del aria-label="Remove">${icon("trash")}</button>${note}</div>`}
+
+SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.sec&&ADD.sec.unit);
+  const states=ADD.rows.map(r=>rowState(r,uw));
+  const left=states.filter(s=>s.block).length;const n=states.filter(s=>s.save).length;const secBad=!nb&&!secOk();
+  const mainIdx=[],dupIdx=[];states.forEach((s,i)=>(s.dup?dupIdx:mainIdx).push(i));
+  const where=nb?"your notebook":"Unit "+esc(ADD.sec&&ADD.sec.unit);
+  let btn;
+  if(ADD.saving)btn=`<button class="btn primary block" disabled>Saving...</button>`;
+  else if(secBad)btn=`<button class="btn primary block" disabled>Pick the section first</button>`;
+  else if(left)btn=`<button class="btn primary block" disabled>Check ${plural(left,"word")} first</button>`;
+  else if(!n)btn=`<button class="btn primary block" disabled>No new words to save</button>`;
+  else btn=`<button class="btn primary block" id="save">${icon("check")} Save ${plural(n,"word")}</button>`;
+  return{html:appbar("Check the words",{backLabel:"Photo",backId:"rvback"})+`<div class="wrap">
+    <header class="pagehead"><span class="label">${nb?"Notebook":"Textbook"}</span><h1>${plural(ADD.rows.length,"word")} found</h1>
+      <p class="muted">${left?`<b style="color:var(--warn)">${left} to check.</b> Choose or fix them, then save.`:nb?"All checked. Fix anything else you see, then save.":"Untick the words you don't need, fix anything you see, then save."}</p>
+      ${dupIdx.length?`<p class="hint">${dupIdx.length===ADD.rows.length?"All of them are":plural(dupIdx.length,"word").replace(/s$/,"s are").replace(/word$/,"word is")} already in ${where}.</p>`:""}
+      ${ADD.switched?`<p class="hint">This looks like a ${nb?"notebook":"textbook"} page, so the words go to the ${nb?"notebook":"textbook"}.</p>`:""}</header>
+    ${nb?"":secCard()}
+    <div class="rev">${mainIdx.map(i=>rowHtml(ADD.rows[i],i,uw)).join("")}</div>
+    ${dupIdx.length?`<button class="btn soft block" id="dups">${ADD.showDups?"Hide":"Show"} the ${plural(dupIdx.length,"word")} already in ${where}</button>
+      ${ADD.showDups?`<div class="rev">${dupIdx.map(i=>rowHtml(ADD.rows[i],i,uw)).join("")}</div>`:""}`:""}
+    <button class="btn ghost block" id="addrow">${icon("plus")} Add a word</button></div>`,
+    dock:btn,
+    after(){
+      $("#rvback").onclick=()=>openSheet(`<div class="sheet-head"><div class="txt"><h2>Discard these words?</h2><p>The words from this photo will not be saved.</p></div></div>
+        <div style="display:flex;gap:8px"><button class="btn ghost" id="dy" style="flex:1">Discard</button><button class="btn primary" id="dn" style="flex:1">Keep checking</button></div>`,
+        sh=>{sh.querySelector("#dn").onclick=()=>closeSheet();sh.querySelector("#dy").onclick=()=>{closeSheet(true);back()}});
+      $$("[data-row]").forEach(row=>{const i=+row.dataset.row;const r=ADD.rows[i];
+        row.querySelectorAll("[data-f]").forEach(inp=>{inp.oninput=()=>{r[inp.dataset.f]=inp.value};
+          inp.onchange=()=>{if(r.kind==="nb"&&r.status==="unreadable"&&!r.resolved&&r.en.trim()&&r.bg.trim())r.resolved=true;keep(render)}});
+        row.querySelector("[data-del]").onclick=()=>{ADD.rows.splice(i,1);keep(render)};
+        const kp=row.querySelector("[data-keep]");if(kp)kp.onclick=()=>{r.keep=!r.keep;keep(render)};
+        const ok=row.querySelector("[data-okrow]");if(ok)ok.onclick=()=>{r.resolved=true;keep(render)};
+        row.querySelectorAll("[data-opt]").forEach(b=>b.onclick=()=>{const v=b.dataset.opt;
+          if(v==="both"){const o=r.options;const base=r.num?baseNum(r.num)||r.num:"";
+            const r2=Object.assign({},r,{en:o[1].en,bg:o[1].bg,num:base?base+"b":"",resolved:true,both:true});
+            Object.assign(r,{en:o[0].en,bg:o[0].bg,num:base?base+"a":"",resolved:true,both:true});r2.skipCorr=true;ADD.rows.splice(i+1,0,r2)}
+          else{const o=r.options[+v];Object.assign(r,{en:o.en,bg:o.bg,resolved:true})}
+          keep(render)})});
+      $("#addrow").onclick=()=>{const last=ADD.rows[ADD.rows.length-1];const nx=nb&&last&&parseInt(last.num,10)?String(parseInt(last.num,10)+1):"";
+        ADD.rows.push(nb?{kind:"nb",num:nx,en:"",bg:"",wen:"",wbg:"",status:"ok",note:"",options:[],resolved:true,manual:true}:{kind:"tb",en:"",bg:"",def:"",pos:"",keep:true,manual:true});
+        keep(render);const rows=$$("[data-row]");const el=rows[rows.length-1];if(el){const inp=el.querySelector('[data-f="en"]');if(inp)inp.focus()}};
+      if(!nb){const cs=$("#chsec");if(cs)cs.onclick=()=>{ADD.editSec=true;keep(render)};
+        $$("[data-su]").forEach(b=>b.onclick=()=>{ADD.sec.unit=b.dataset.su;ADD.sec.lesson="";keep(render)});
+        $$("[data-sl]").forEach(b=>b.onclick=()=>{ADD.sec.lesson=b.dataset.sl;const ex=lessonDeck(ADD.sec.unit,ADD.sec.lesson);if(ex)ADD.sec.title=DECKS[ex].name;ADD.sec.low=false;keep(render)});
+        const ti=$("#sectitle");if(ti)ti.oninput=()=>{ADD.sec.title=ti.value};
+        const sd=$("#secdone");if(sd)sd.onclick=()=>{ADD.editSec=false;ADD.sec.low=false;keep(render)}}
+      const sv=$("#save");if(sv)sv.onclick=doSave;
+      const du=$("#dups");if(du)du.onclick=()=>{ADD.showDups=!ADD.showDups;keep(render)};
+    }}};
+SCREENS.addReview.label="Check";
+
+function corrFor(r){
+  if(r.kind!=="nb"||r.manual||r.skipCorr)return null;
+  if(r.status!=="fixed"&&r.status!=="choose")return null;
+  const wrote=r.wen,wbg=r.wbg;
+  if(r.both){const o=r.options;return{num:baseNum(r.num)||"",wrote:pairTxt(wrote,wbg),correct:o.map(x=>pairTxt(x.en,x.bg)).join("; "),note:r.note}}
+  const enCh=lc(wrote)!==lc(r.en),bgCh=lc(wbg)!==lc(r.bg);
+  if(!enCh&&!bgCh)return null;
+  return{num:String(r.num||"").trim(),wrote:bgCh?pairTxt(wrote,wbg||"(no translation)"):wrote,correct:bgCh?pairTxt(r.en,r.bg):r.en,note:r.note}}
+function doSave(){if(ADD.saving)return;
+  const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.sec.unit);
+  const rows=ADD.rows.filter(r=>rowState(r,uw).save);if(!rows.length)return;
+  const sendRows=nb?ADD.rows.filter(r=>r.en.trim()):rows;
+  ADD.saving=true;keep(render);
+  const fail=()=>{ADD.saving=false;toast("Could not save. Check the connection and try again.");if(top_().name==="addReview")keep(render)};
+  if(nb){
+    const entries=sendRows.map(r=>({num:String(r.num||"").trim()||null,en:r.en.trim(),bg:r.bg.trim()}));
+    const corrections=rows.map(corrFor).filter(Boolean);
+    call("saveNotebookWords",JSON.stringify({entries,corrections})).then(txt=>{const res=JSON.parse(txt);
+      return call("getNotebook").then(t2=>{let rws=[];try{rws=JSON.parse(t2||"[]")}catch(e){}if(rws.length){setNotebook(rws);try{localStorage.setItem("maya-nb-cache",JSON.stringify(rws))}catch(e){}}})
+        .catch(()=>{}).then(()=>loadCorrections()).then(()=>{ADD.saving=false;ADD.saved={kind:"nb",res,corrections};replace("addSaved")})}).catch(fail);
+  }else{
+    const s=ADD.sec;const title=(s.title||"").trim()||"Lesson "+s.lesson;
+    const words=rows.map(r=>({en:r.en.trim(),bg:r.bg.trim(),def:r.def||"",pos:r.pos||""}));
+    call("saveTextbookWords",JSON.stringify({unit:s.unit,lesson:s.lesson,title,words})).then(txt=>{const res=JSON.parse(txt);
+      return loadTextbook().then(()=>{ADD.saving=false;ADD.saved={kind:"tb",res,title};replace("addSaved")})}).catch(fail);
+  }
+}
+SCREENS.addSaved=()=>{const sv=ADD.saved;const res=sv.res;const n=res.added.length;const nb=sv.kind==="nb";
+  const nums=nb?res.added.map(a=>a.num).sort((a,b)=>a.localeCompare(b,"en",{numeric:true})):[];
+  const where=nb?(n?"Notebook #"+nums[0]+(n>1?" to #"+nums[nums.length-1]:""):"Notebook"):"Unit "+res.unit+" · "+(ADD.sec.lesson)+" · "+sv.title;
+  const sk=res.skipped.length;
+  return{html:`<div class="wrap" style="padding-top:calc(24px + env(safe-area-inset-top,0px))">
+    <div style="text-align:center;display:flex;flex-direction:column;gap:6px"><div class="done-mark">${icon("check")}</div>
+    <h1 style="font-size:1.7rem">${n?plural(n,"word")+" added":"No new words"}</h1>
+    <p class="muted">${esc(where)}</p>
+    <p class="hint">${n?"They are saved online, on all your devices.":"All the words from this page are already in the app."}${sk&&n?" "+plural(sk,"word")+" "+(sk===1?"was":"were")+" already there.":""}</p></div>
+    ${nb&&sv.corrections.length?`<section class="field-row"><span class="label">Fix these in your notebook</span><div class="list">${sv.corrections.map(c=>`<div class="rowlink"><div class="fixcard">
+      <span class="nr">${c.num?"#"+esc(c.num):"No number"}</span><span>You wrote: <s>${esc(c.wrote)}</s></span><span class="ok">Correct: ${esc(c.correct)}</span>${c.note?`<span class="note-line">${esc(c.note)}</span>`:""}</div></div>`).join("")}</div>
+      <p class="hint">You can find this list later on Home, under your notebook.</p></section>`:""}
+  </div>`,
+  dock:`<div class="row"><button class="btn ghost" id="hm">${icon("home")} Home</button><button class="btn primary" id="pr" ${n?"":"disabled"}>${icon("play")} Practise</button></div>`,
+  after(){$("#hm").onclick=goHome;
+    const pr=$("#pr");if(pr)pr.onclick=()=>{
+      if(nb){const ids=new Set(nums);const items=DECKS.nb.items.filter(x=>ids.has(x.id));if(!items.length){goHome();return}
+        const p=Object.assign({},S.pref,{deck:"nb",mode:"flash",dir:"en",n:"all",nbLast:0,nbFrom:items[0].num,nbTo:items[items.length-1].num});
+        TAB="home";NAV.stack=[{name:"home",params:{root:true}}];startQuiz(p,false,items)}
+      else{const d=res.deck;goHome();if(DECKS[d]){OPEN_UNIT=DECKS[d].unit;keep(render);openDeckSheet(d)}}}}}};
+SCREENS.addSaved.label="Home";
+
+/* ---------- start ---------- */
+/* without a server (the page opened without the personal link) only a short note is shown */
+function noLink(){document.body.dataset.screen="nolink";
+  $("#app").innerHTML=`<div class="wrap" style="padding-top:calc(56px + env(safe-area-inset-top,0px));text-align:center;align-items:center">
+    <div class="done-mark" style="background:var(--accent-soft);color:var(--accent);margin:0">${icon("note")}</div>
+    <h1 style="font-size:1.7rem">Word Trainer</h1><p class="muted">Open the app from your personal link.</p></div>`}
+if(GAS){TAB="home";resetTo("home",{root:true});pull()}
+else noLink();
+</script>
+</body>
+</html>
