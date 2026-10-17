@@ -542,6 +542,8 @@ function setNotebook(rows){
 try{const c=JSON.parse(localStorage.getItem("maya-nb-cache")||"null");if(c&&c.length)setNotebook(c)}catch(e){}
 let CORR=[];
 try{CORR=JSON.parse(localStorage.getItem("maya-corr-cache")||"[]")||[]}catch(e){CORR=[]}
+/* numbers the server v4 did not store for corrections of rows without a number (id -> 238a), filled in on this device */
+let CORR_NUMS={};try{CORR_NUMS=JSON.parse(localStorage.getItem("maya-corr-nums")||"{}")||{}}catch(e){CORR_NUMS={}}
 
 /* ---------- storage ---------- */
 const KEY="maya-words-v2";
@@ -613,7 +615,15 @@ function loadTextbook(){if(!GAS)return Promise.resolve();
     if(tb&&setTextbook(tb)){try{localStorage.setItem("maya-tb-cache",txt)}catch(e){}refreshRoot()}}).catch(()=>{})}
 function loadCorrections(){if(!GAS)return Promise.resolve();
   return call("getCorrections").then(txt=>{let c=[];try{c=JSON.parse(txt||"[]")}catch(e){}
-    CORR=(Array.isArray(c)?c:[]).map(x=>Object.assign({},x,{num:String(x.num||"").replace(/^'/,"")}));try{localStorage.setItem("maya-corr-cache",JSON.stringify(CORR))}catch(e){}refreshRoot()}).catch(()=>{})}
+    CORR=(Array.isArray(c)?c:[]).map(x=>Object.assign({},x,{num:String(x.num||"").replace(/^'/,"")||CORR_NUMS[x.id]||""}));
+    const kept={};CORR.forEach(x=>{if(CORR_NUMS[x.id])kept[x.id]=CORR_NUMS[x.id]});CORR_NUMS=kept;
+    try{localStorage.setItem("maya-corr-cache",JSON.stringify(CORR));localStorage.setItem("maya-corr-nums",JSON.stringify(CORR_NUMS))}catch(e){}refreshRoot()}).catch(()=>{})}
+/* after a save: a correction sent without a number gets the number the server gave its word (res.added, same en) */
+function fillCorrNums(corrections,added){const filled=[];
+  corrections.forEach(c=>{if(c.num||!c.en)return;const a=added.find(x=>lc(x.en)===lc(c.en));if(a){c.num=String(a.num);filled.push(c)}});return filled}
+function patchCorr(filled){if(!filled.length)return;
+  CORR.forEach(x=>{if(x.num)return;const c=filled.find(c=>String(c.wrote)===String(x.wrote)&&String(c.correct)===String(x.correct));if(c){x.num=c.num;CORR_NUMS[x.id]=c.num}});
+  try{localStorage.setItem("maya-corr-cache",JSON.stringify(CORR));localStorage.setItem("maya-corr-nums",JSON.stringify(CORR_NUMS))}catch(e){}}
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden"&&pushTimer)push();
   else if(document.visibilityState==="visible"&&GAS&&PULLED_AT&&Date.now()-PULLED_AT>PULL_AGE)pullState().catch(retryLater)});
 window.addEventListener("online",()=>{if(GAS&&(retryTimer||cloud==="err"))push()});
@@ -1324,10 +1334,11 @@ function corrFor(r){
   if(r.kind!=="nb"||r.manual||r.skipCorr)return null;
   if(r.status!=="fixed"&&r.status!=="choose")return null;
   const wrote=r.wen,wbg=r.wbg;
-  if(r.both){const o=r.options;return{num:baseNum(r.num)||"",wrote:pairTxt(wrote,wbg),correct:o.map(x=>pairTxt(x.en,x.bg)).join("; "),note:r.note}}
+  /* en: the server (and fillCorrNums) find the number given to a row without one */
+  if(r.both){const o=r.options;return{num:baseNum(r.num)||"",en:o[0].en.trim(),wrote:pairTxt(wrote,wbg),correct:o.map(x=>pairTxt(x.en,x.bg)).join("; "),note:r.note}}
   const enCh=lc(wrote)!==lc(r.en),bgCh=lc(wbg)!==lc(r.bg);
   if(!enCh&&!bgCh)return null;
-  return{num:String(r.num||"").trim(),wrote:bgCh?pairTxt(wrote,wbg||"(no translation)"):wrote,correct:bgCh?pairTxt(r.en,r.bg):r.en,note:r.note}}
+  return{num:normNum(r.num)||"",en:r.en.trim(),wrote:bgCh?pairTxt(wrote,wbg||"(no translation)"):wrote,correct:bgCh?pairTxt(r.en,r.bg):r.en,note:r.note}}
 function reloadNotebook(){return call("getNotebook").then(t2=>{let rws=[];try{rws=JSON.parse(t2||"[]")}catch(e){}
   if(rws.length){setNotebook(rws);try{localStorage.setItem("maya-nb-cache",JSON.stringify(rws))}catch(e){}}}).catch(()=>{})}
 function doSave(){if(ADD.saving)return;
@@ -1341,7 +1352,8 @@ function doSave(){if(ADD.saving)return;
     const corrections=rows.map(corrFor).filter(Boolean);
     call("saveNotebookWords",JSON.stringify({entries,corrections})).then(txt=>{const res=JSON.parse(txt);
       if(res.error==="numbers"){ADD.saving=false;ADD.numErr={last:res.last,first:res.first};if(top_().name==="addReview")keep(render);return}
-      return reloadNotebook().then(()=>loadCorrections()).then(()=>{ADD.saving=false;ADD.saved={kind:"nb",res,corrections,at:Date.now()};replace("addSaved")})}).catch(fail);
+      const filled=fillCorrNums(corrections,res.added||[]);
+      return reloadNotebook().then(()=>loadCorrections()).then(()=>{patchCorr(filled);ADD.saving=false;ADD.saved={kind:"nb",res,corrections,at:Date.now()};replace("addSaved")})}).catch(fail);
   }else{
     const s=ADD.sec;const title=(s.title||"").trim()||"Lesson "+s.lesson;
     const words=rows.map(r=>({en:r.en.trim(),bg:r.bg.trim(),def:r.def||"",pos:r.pos||""}));
