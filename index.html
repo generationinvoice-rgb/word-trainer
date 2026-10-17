@@ -502,7 +502,7 @@ function setTextbook(tb){
       const sec={id:String(s.id),lessons:(s.lessons||[String(s.id)]).map(String),title:s.title||"",decks:[]};
       (s.decks||[]).forEach(dk=>{
         if(!dk||!dk.id||dk.id==="nb"||decks[dk.id]||/^unit\d/.test(dk.id))return;
-        const type=dk.type||"vocab";
+        const type=dk.type||"vocab";if(!["vocab","opposites","prep"].includes(type))return; /* unknown type: no deck */
         const items=(dk.items||[]).map(it=>type==="opposites"?{id:String(it.id),base:it.base,opp:it.opp,bg:it.bg||"",ex:it.ex||[]}
           :type==="prep"?{id:String(it.id),label:it.label,acc:it.acc||[],s:it.s,bg:it.bg||""}
           :{id:String(it.id),en:it.en,bg:it.bg||"",def:it.def||""})
@@ -604,12 +604,15 @@ function pullState(){if(PULLING)return PULLING;
   return PULLING}
 function pull(){if(!GAS)return;
   pullState().then(push,retryLater);
+  loadNotebook();loadTextbook();loadCorrections();
+}
+function loadNotebook(){
   call("getNotebook").then(txt=>{let rows=null;try{rows=JSON.parse(txt||"null")}catch(e){}
     if(Array.isArray(rows)&&rows.length){setNotebook(rows);try{localStorage.setItem("maya-nb-cache",JSON.stringify(rows))}catch(e){}}
     else if(!DECKS.nb.items.length)NB_STATE=Array.isArray(rows)?"empty":"err";
     refreshRoot()}).catch(()=>{if(!DECKS.nb.items.length){NB_STATE="err";refreshRoot()}});
-  loadTextbook();loadCorrections();
 }
+const NB_MSG={loading:"Loading your notebook...",empty:"Your notebook is empty.",err:"Your notebook could not be loaded. Tap to try again.",none:"Your notebook is not available right now."};
 function loadTextbook(){if(!GAS)return Promise.resolve();
   return call("getTextbook").then(txt=>{if(!txt)return;let tb=null;try{tb=JSON.parse(txt)}catch(e){}
     if(tb&&setTextbook(tb)){try{localStorage.setItem("maya-tb-cache",txt)}catch(e){}refreshRoot()}}).catch(()=>{})}
@@ -747,7 +750,7 @@ function modePanel(d,draft){
       <p class="hint" id="nbcount">${nbCountHtml(nAll)}</p></div>`:"";
   return `${rangeHtml}
     <div class="field-row"><span class="label">How many words</span>
-      <div class="seg small" style="--cols:3">${[["10","10"],["20","20"],["all","All "+nAll]].map(([v,l])=>`<button data-n="${v}" aria-pressed="${String(draft.n)===v}">${l}</button>`).join("")}</div></div>
+      <div class="seg small" style="--cols:3">${[["10","10"],["20","20"],["all","All "+nAll]].map(([v,l])=>`<button data-n="${v}" ${nOver(v,nAll)?"disabled ":""}aria-pressed="${nSel(draft.n,nAll)===v}">${l}</button>`).join("")}</div></div>
     <div class="field-row"><span class="label">Start practising</span>
     <div class="modes">${ms.map(m=>{const isLast=!!last&&last.mode===m.mode&&(m.mode!=="choice"||!twoDir(d)||last.dir===m.dir);
       return `<button class="mode${isLast?" last":""}" data-mode="${m.k}" ${nAll?"":"disabled"}><span class="ic">${m.ic}</span><span class="txt">${isLast?'<span class="tag">Last time</span>':""}<b>${m.t}</b><span>${m.s}</span></span><span class="go">${icon("play")}</span></button>`+
@@ -755,6 +758,10 @@ function modePanel(d,draft){
     </div></div>
     ${c.mist?`<button class="btn warn block" id="fixm">${icon("redo")} Practise mistakes (${c.mist})</button>`:""}`;
 }
+/* "10"/"20" are not offered when the set has that many words or fewer: "All n" is the same */
+const nOver=(v,all)=>v!=="all"&&all>0&&+v>=all;
+const nSel=(n,all)=>nOver(String(n),all)?"all":String(n);
+function syncN(root,n,cur){root.querySelectorAll("[data-n]").forEach(x=>{x.disabled=nOver(x.dataset.n,n);x.setAttribute("aria-pressed",String(nSel(cur,n)===x.dataset.n))})}
 const nbCountHtml=n=>n?`<b>${plural(n,"word")}</b> · your notebook goes up to #${esc(nbLastId())}`:`<b style="color:var(--bad)">No words in this range.</b> Your notebook goes from #1 to #${esc(nbLastId())}.`;
 function wireModePanel(root,d,draft,rerender){
   const q=s=>root.querySelector(s);
@@ -765,7 +772,7 @@ function wireModePanel(root,d,draft,rerender){
   if(f){const apply=()=>{draft._custom=true;draft.nbLast=0;draft.nbFrom=f.value?+f.value:1;draft.nbTo=t.value?+t.value:"";
       q("#rng").classList.add("on");root.querySelectorAll("[data-last]").forEach(x=>x.setAttribute("aria-pressed","false"));
       const n=nbRange(draft).length;q("#nbcount").innerHTML=nbCountHtml(n);
-      const all=root.querySelector('[data-n="all"]');if(all)all.textContent="All "+n;
+      const all=root.querySelector('[data-n="all"]');if(all)all.textContent="All "+n;syncN(root,n,draft.n);
       root.querySelectorAll("[data-mode]").forEach(b=>b.disabled=!n);const fm=q("#fixm");if(fm)fm.disabled=!n};
     f.oninput=apply;t.oninput=apply;
     [f,t].forEach(x=>x.onfocus=()=>{q("#rng").classList.add("on")})}
@@ -776,7 +783,7 @@ function wireModePanel(root,d,draft,rerender){
 }
 function openDeckSheet(d){
   if(!DECKS[d])return;
-  if(d==="nb"&&!nbAll().length){toast(NB_STATE==="loading"?"Your notebook is still loading.":"Your notebook is not available right now.");return}
+  if(d==="nb"&&!nbAll().length){toast(NB_STATE==="loading"?"Your notebook is still loading.":NB_STATE==="empty"?NB_MSG.empty:"Your notebook could not be loaded.");return}
   const draft=Object.assign({},S.pref);
   if(d!=="nb"&&S.pref.deck!==d){/* keep count and flash setting, the range is only for the notebook */}
   const D=DECKS[d];
@@ -810,7 +817,7 @@ function unitsHtml(){const L=UNITS;if(!L.length)return `<p class="hint">The text
   return head.map(unitBlock).join("")+(older.length?`<div class="unit"><button class="unit-head" id="older" aria-expanded="${SHOW_OLDER}"><span class="txt"><b style="font-size:1rem">Older units (${older.length})</b><span>Unit ${esc(older[older.length-1].n)} to Unit ${esc(older[0].n)}</span></span>${icon("chev","chev")}</button>
     ${SHOW_OLDER?`<div class="older">${older.map(unitBlock).join("")}</div>`:""}</div>`:"")}
 function nbTile(){const all=nbAll();
-  if(!all.length)return `<button class="tile wide" disabled><span class="ic">${icon("note")}</span><span class="col"><span class="t">My notebook</span><span class="s">${NB_STATE==="loading"?"Loading your notebook...":"Your notebook is not available right now."}</span></span></button>`;
+  if(!all.length)return `<button class="tile wide" ${NB_STATE==="err"?'id="nbretry"':"disabled"}><span class="ic">${icon("note")}</span><span class="col"><span class="t">My notebook</span><span class="s">${NB_MSG[NB_STATE]||NB_MSG.none}</span></span></button>`;
   const c=counts("nb",all);
   return `<button class="tile wide" data-deck="nb"><span class="ic">${icon("note")}</span><span class="col">
     <span class="t">My notebook</span><span class="s">${plural(all.length,"word")} · #${esc(all[0].id)} to #${esc(nbLastId())}</span>${c.mist?`<span class="s bad">${plural(c.mist,"mistake")}</span>`:""}
@@ -818,7 +825,7 @@ function nbTile(){const all=nbAll();
 function contPref(){return prefValid(S.pref)?S.pref:Object.assign({},S.pref,{deck:DECKS.words?"words":realDecks()[0]||"nb",mode:"choice",dir:"en"})}
 function contDock(){const p=contPref();const first=!S.log.length;const sum=prefSummary(p);
   let dis="",lbl=first?"Start":"Continue";
-  if(p.deck==="nb"&&!nbAll().length){dis="disabled";lbl="Loading..."}
+  if(p.deck==="nb"&&!nbAll().length){dis="disabled";lbl=NB_STATE==="loading"?"Loading...":"No words"}
   else if(!deckItems(p.deck,p).length){dis="disabled";lbl="No words"}
   return `<div class="cont"><button class="txt" id="conttxt" aria-label="Change: ${esc(sum.what)}"><b>${esc(sum.what)}</b><span>${esc(sum.how)}</span></button><button class="btn primary" id="cont" ${dis}>${icon("play")} ${lbl}</button></div>`}
 SCREENS.home=()=>{const sk=streak();const tl=totalLearned();
@@ -843,6 +850,7 @@ SCREENS.home=()=>{const sk=streak();const tl=totalLearned();
       $$("[data-unit]").forEach(b=>b.onclick=()=>{const n=b.dataset.unit;OPEN_UNIT=openUnit()===n?"":n;keep(render)});
       const ol=$("#older");if(ol)ol.onclick=()=>{SHOW_OLDER=!SHOW_OLDER;keep(render)};
       const fl=$("#fixl");if(fl)fl.onclick=()=>go("fix");
+      const nr=$("#nbretry");if(nr)nr.onclick=()=>{NB_STATE="loading";keep(render);loadNotebook()};
       $("#cont").onclick=()=>startQuiz(contPref(),false);
       $("#conttxt").onclick=()=>openDeckSheet(contPref().deck)}}};
 SCREENS.home.label="Home";
@@ -872,7 +880,7 @@ SCREENS.progress=()=>{const sk=streak();const days=new Set(S.days);const d0=new 
     <section class="card"><div class="section-title"><span class="label">This week</span><span class="hint">${wk.filter(x=>x.on).length} of 7 days</span></div>
       <div class="week">${wk.map(x=>`<div>${x.l}<i class="${x.on?"on":""}${x.today?" today":""}"></i></div>`).join("")}</div></section>
     <section class="card"><span class="label">Learned</span>${decks.map(d=>{const c=counts(d,DECKS[d].items);return `<div class="deckbar"><b>${esc(DECKS[d].name)}${d==="nb"?"":' <span class="muted" style="font-weight:400">· Unit '+esc(DECKS[d].unit)+"</span>"}</b><span>${c.learned} / ${c.total}</span><div class="bar"><i style="width:${pct(c.learned,c.total)}%"></i></div></div>`}).join("")}</section>
-    ${log.length?`<section class="card"><span class="label">Recent practice</span><ul class="log">${log.map(l=>`<li><span>${esc(l.when)} · ${esc(l.what)}</span><b>${l.ok}/${l.n}</b></li>`).join("")}</ul></section>`:""}
+    ${log.length?`<section class="card"><span class="label">Recent practice</span><ul class="log">${log.map(l=>`<li><span>${esc(l.when)} · ${esc(l.what)}</span><b>${esc(l.ok)}/${esc(l.n)}</b></li>`).join("")}</ul></section>`:""}
     <p class="hint">A word counts as learned after 3 right answers in a row.</p>
     <p class="hint" id="sync">${esc(syncText())}</p></div>`,
     after(){$("#pm").onclick=()=>{TAB="mistakes";resetTo("mistakes",{root:true})}}}};
@@ -941,7 +949,7 @@ function build(d,it,mode,dir){
     return base;
   }
   /* prep */
-  const filled=it.s.replace("___","<mark>"+esc(it.acc[0])+"</mark>");
+  const filled=esc(it.s).replace("___","<mark>"+esc(it.acc[0])+"</mark>");
   const o={dtype:"prep",ask:"Which preposition is missing?",prompt:it.s,lang:"en",sentence:true,sub:it.bg,subHidden:true,accept:it.acc,answer:it.label,
     answerHtml:filled,extra:it.acc.length>1?"Also correct: "+it.acc.slice(1).join(", "):"",say:it.s.replace("___",it.acc[0])};
   if(mode==="choice"){const wrong=shuffle(PREP_POOL.filter(p=>!it.acc.includes(p))).slice(0,3);
@@ -1057,7 +1065,7 @@ function confirmStop(){
 document.addEventListener("keydown",e=>{
   const t=top_();if(!Q||!t||t.name!=="quiz"||SHEET_OPEN)return;
   if(e.target.tagName==="BUTTON"||e.target.tagName==="INPUT"&&!Q.answered)return;
-  if(Q.mode==="choice"&&!Q.answered&&/^[1-4]$/.test(e.key)){choose(+e.key-1)}
+  if(Q.mode==="choice"&&!Q.answered&&/^[1-4]$/.test(e.key)){if(Q.q.options[+e.key-1])choose(+e.key-1)}
   else if(e.key==="Enter"&&Q.answered){e.preventDefault();next()}
   else if(e.key===" "&&Q.mode==="flash"&&$("#flip")){e.preventDefault();flip()}
 });
@@ -1073,11 +1081,14 @@ function finish(){
   const deckName=D.mix?"Unit "+D.unit+" (all sets)":d==="nb"?"Notebook "+nbLabel(Q.p):D.name;
   const what=deckName+" · "+modeTitle(d,Q.mode,Q.dir)+(Q.mistakes?" (mistakes)":"");
   const logged=n>=MIN_LOG;
+  const R={d,ok,n,wrong,wrongItems:wrongIds.map(id=>Q.items.get(id)).filter(Boolean),what,p:Q.p,logged,when,sent:""};
   if(logged){S.log.push({when,what,ok,n,ts:Date.now()});S.log=S.log.slice(-30);save();
-    if(GAS)call("logSession",{deck:deckName,mode:modeTitle(d,Q.mode,Q.dir),dir:dirTxt.replace(", ",""),mistakesOnly:Q.mistakes,ok,n,wrong:wrong.join(", ")}).catch(()=>{})}
-  const R={d,ok,n,wrong,wrongItems:wrongIds.map(id=>Q.items.get(id)).filter(Boolean),what,p:Q.p,logged,when};
+    if(GAS){R.sent="wait";const done=v=>{R.sent=v;const m=$("#logmsg");if(m&&top_()&&top_().params===R)m.textContent=logMsg(R)};
+      call("logSession",{deck:deckName,mode:modeTitle(d,Q.mode,Q.dir),dir:dirTxt.replace(", ",""),mistakesOnly:Q.mistakes,ok,n,wrong:wrong.join(", ")})
+        .then(()=>done("ok"),()=>done("err"))}}
   Q=null;replace("result",R);
 }
+const logMsg=R=>R.sent==="ok"?"Your results are saved. Dad can see them.":R.sent==="err"?"Your answers are saved on this device. Dad can't see this result: there was no connection.":"Your answers are saved.";
 SCREENS.result=R=>{
   const d=R.d;const dItems=deckItems(d,R.p);const learned=dItems.filter(x=>isLearned(d,x.id)).length;const mist=dItems.filter(x=>isMistake(d,x.id)).length;
   const report=`${NAME?NAME+" · ":""}English
@@ -1091,12 +1102,12 @@ Days in a row: ${streak()}`;
     <header class="pagehead"><span class="label">${esc(R.what)}</span><div class="score">${R.ok}<span class="muted" style="font-size:.5em"> / ${R.n}</span></div><h1 style="font-size:1.4rem">${praise}</h1></header>
     ${R.wrong.length?`<section class="field-row"><span class="label">Words to review</span><ul class="words">${R.wrong.map(w=>`<li lang="en">${esc(w)}</li>`).join("")}</ul></section>
       <button class="btn warn block" id="rv">${icon("redo")} Practise ${R.wrong.length===1?"this word":"these "+R.wrong.length} again</button>`:""}
-    ${GAS?`<p class="hint">${R.logged?"Your results are saved. Dad can see them.":"Your answers are saved."}</p>`:`<section class="field-row"><span class="label">Report</span>
+    ${GAS?`<p class="hint" id="logmsg">${logMsg(R)}</p>`:`<section class="field-row"><span class="label">Report</span>
       <textarea id="rep" rows="6" readonly>${esc(report)}</textarea>
       <button class="btn ghost" id="copy">Copy the report</button>
       <p class="hint" id="cpn">Then send it to Dad on Viber.</p></section>`}
     </div>`,
-    dock:`<div class="row"><button class="btn ghost" id="hm">${icon("home")} Home</button><button class="btn primary" id="again">${R.p.n==="all"?"Again":R.p.n+" more"}</button></div>`,
+    dock:`<div class="row"><button class="btn ghost" id="hm">${icon("home")} Home</button><button class="btn primary" id="again">${R.p.n==="all"||R.p.n>=dItems.length?"Again":R.p.n+" more"}</button></div>`,
     after(){$("#hm").onclick=goHome;
       $("#again").onclick=()=>{NAV.stack.pop();startQuiz(R.p,false)};
       const rv=$("#rv");if(rv)rv.onclick=()=>{NAV.stack.pop();startQuiz(R.p,false,R.wrongItems)};
@@ -1240,10 +1251,11 @@ function rowHtml(r,i,uw,ro){const stt=rowState(r,uw);const dis=ro?" disabled":""
   else if(stt.bad)note=`<div class="note">${icon("alert")}<span>“${esc(normNum(r.num))}” is not a notebook number. Use a number like 240 or 240a.</span></div>`;
   else if(stt.used)note=`<div class="note">${icon("alert")}<span>#${esc(normNum(r.num))} is already used for “${esc(stt.used.en)}”. Change the number.</span></div>`;
   else if(stt.twice)note=`<div class="note">${icon("alert")}<span>This number is used twice on this page. Change one of them.</span></div>`;
-  else if(r.status==="choose"&&!r.resolved)note=`<div class="note">${icon("alert")}<span>${esc(r.note||"Which one is right?")} You wrote “${esc(pairTxt(r.wen,r.wbg))}”.</span></div>
+  if(stt.dup){/* a duplicate is not added: no other note */}
+  else if(r.status==="choose"&&!r.resolved)note+=`<div class="note">${icon("alert")}<span>${esc(r.note||"Which one is right?")} You wrote “${esc(pairTxt(r.wen,r.wbg))}”.</span></div>
     <div class="opts2">${r.options.slice(0,2).map((o,k)=>`<button class="chip" data-opt="${k}">${esc(pairTxt(o.en,o.bg))}</button>`).join("")}<button class="chip" data-opt="both">Both</button></div>`;
-  else if(r.status==="unreadable"&&!r.resolved)note=`<div class="note">${icon("alert")}<span>${esc(r.note||"We couldn't read all of it.")}</span><button class="textbtn" data-okrow>Looks right</button></div>`;
-  else if(r.status==="fixed"||r.status==="choose")note=`<div class="note info">${icon("pen")}<span>You wrote “${esc(r.status==="choose"?pairTxt(r.wen,r.wbg):wrote)}”. ${esc(r.note)}</span></div>`;
+  else if(r.status==="unreadable"&&!r.resolved)note+=`<div class="note">${icon("alert")}<span>${esc(r.note||"We couldn't read all of it.")}</span><button class="textbtn" data-okrow>Looks right</button></div>`;
+  else if(r.status==="fixed"||r.status==="choose")note+=`<div class="note info">${icon("pen")}<span>You wrote “${esc(r.status==="choose"?pairTxt(r.wen,r.wbg):wrote)}”. ${esc(r.note)}</span></div>`;
   return `<div class="wrow${stt.block?" flag":""}${stt.dup?" off":""}" data-row="${i}">
     <input class="num" value="${esc(r.num)}" aria-label="Number" data-f="num" placeholder="#"${dis}>
     <div class="pair"><input value="${esc(r.en)}" aria-label="English" data-f="en" lang="en"${dis}><input value="${esc(r.bg)}" aria-label="Bulgarian" data-f="bg" placeholder="Bulgarian" lang="bg"${dis}></div>
@@ -1395,7 +1407,8 @@ SCREENS.addSaved=()=>{const sv=ADD.saved;const res=sv.res;const n=res.added.leng
         sh=>{sh.querySelector("#un").onclick=()=>closeSheet();
           sh.querySelector("#uy").onclick=()=>{const b=sh.querySelector("#uy");b.disabled=true;b.textContent="Removing...";
             call("undoBatch",res.batch).then(txt=>{let r={};try{r=JSON.parse(txt)}catch(e){}
-              if(r.error==="too_late"||r.error==="not_found"){closeSheet(true);sv.late=r.error==="too_late";sv.undone=r.error==="not_found";keep(render);return}
+              if(r.error==="too_late"||r.error==="not_found"){closeSheet(true);sv.late=r.error==="too_late";sv.undone=r.error==="not_found";
+                if(sv.undone)toast("Already removed.");keep(render);return}
               return (nb?reloadNotebook().then(()=>loadCorrections()):loadTextbook()).then(()=>{closeSheet(true);sv.undone=true;toast("Removed.");goHome()})})
             .catch(()=>{closeSheet(true);toast("Could not undo. Check the connection and try again.")})}})};
     const pr=$("#pr");if(pr)pr.onclick=()=>{
