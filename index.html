@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap">
 <style>
-/* Word Trainer v4.1 (17.10.2026): Add words starts with the photo (no Source step), clearer duplicate/limit/number messages, Undo, no overscroll. v4: runs on GitHub Pages (fetch to Apps Script) and inside /exec (google.script.run). v3: Home with hero, tiles and units, bottom sheet for "how", tab bar, Add words. */
+/* Word Trainer v4.4 (18.10.2026): Topics, the teacher's sheets as a third source (Notebook, Focus, Topics). v4.1 (17.10.2026): Add words starts with the photo (no Source step), clearer duplicate/limit/number messages, Undo, no overscroll. v4: runs on GitHub Pages (fetch to Apps Script) and inside /exec (google.script.run). v3: Home with hero, tiles and units, bottom sheet for "how", tab bar, Add words. */
 :root{
   --bg:#EDF1F7; --surface:#FFFFFF; --surface-2:#F5F7FB; --ink:#16233B; --muted:#5B6884; --line:#D3DBE8;
   --seg-ink:#4C5975; /* unselected segment text on --line: 5.0:1 (muted gives 4.0:1) */
@@ -303,6 +303,12 @@ textarea{width:100%;font:inherit;font-size:.9rem;padding:10px 12px;border:1.5px 
 .numcard{display:flex;flex-direction:column;gap:4px;background:var(--warn-bg);color:var(--warn);border:1.5px solid var(--warn);border-radius:var(--r);padding:12px 14px;font-size:.92rem}
 .numcard b{font-size:1rem}
 #dupline,#skipline{font-size:1rem;color:var(--ink)}
+.reread{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px}
+.reread span{font-size:.9rem;color:var(--muted);flex-basis:100%}
+.reread .chip{min-height:44px;padding:6px 14px;font-size:.92rem}
+.infoline{display:flex;align-items:flex-start;gap:10px;background:var(--accent-soft);color:var(--ink);border-radius:var(--r);padding:10px 12px;font-size:.92rem}
+.infoline svg.i{color:var(--accent);margin-top:1px}
+#topcard .chip{max-width:100%;overflow-wrap:anywhere}
 .undo{display:flex;flex-direction:column;align-items:center;gap:4px}
 .undo .btn{min-height:48px;padding:10px 22px}
 .toast{position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:700;z-index:50;font-size:.92rem;max-width:90vw;text-align:center}
@@ -495,7 +501,16 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-say]");if(
 
 /* ---------- data: textbook decks, notebook ---------- */
 const DECKS={nb:{name:"Notebook",type:"nb",items:[]}};
-let UNITS=[],TB=null;
+let UNITS=[],TB=null,TOPICS=[];
+/* one deck of textbook.json (a Focus section or a topic): null when the type is unknown or nothing is left */
+function tbDeck(dk,decks){
+  if(!dk||!dk.id||dk.id==="nb"||decks[dk.id]||/^unit\d/.test(dk.id))return null;
+  const type=dk.type||"vocab";if(!["vocab","opposites","prep"].includes(type))return null; /* unknown type: no deck */
+  const items=(dk.items||[]).map(it=>type==="opposites"?{id:String(it.id),base:it.base,opp:it.opp,bg:it.bg||"",ex:it.ex||[]}
+    :type==="prep"?{id:String(it.id),label:it.label,acc:it.acc||[],s:it.s,bg:it.bg||""}
+    :{id:String(it.id),en:it.en,bg:it.bg||"",def:it.def||""})
+    .filter(it=>type==="opposites"?it.base&&it.opp:type==="prep"?it.s&&it.acc.length:it.en);
+  return items.length?{name:dk.name||dk.id,type,items}:null}
 function setTextbook(tb){
   if(!tb||!Array.isArray(tb.units))return false;
   const decks={},units=[];
@@ -503,15 +518,8 @@ function setTextbook(tb){
     const unit={n:String(u.id),num:parseInt(u.id,10)||0,topic:u.topic||"",sections:[],sets:[]};
     (u.sections||[]).forEach(s=>{
       const sec={id:String(s.id),lessons:(s.lessons||[String(s.id)]).map(String),title:s.title||"",decks:[]};
-      (s.decks||[]).forEach(dk=>{
-        if(!dk||!dk.id||dk.id==="nb"||decks[dk.id]||/^unit\d/.test(dk.id))return;
-        const type=dk.type||"vocab";if(!["vocab","opposites","prep"].includes(type))return; /* unknown type: no deck */
-        const items=(dk.items||[]).map(it=>type==="opposites"?{id:String(it.id),base:it.base,opp:it.opp,bg:it.bg||"",ex:it.ex||[]}
-          :type==="prep"?{id:String(it.id),label:it.label,acc:it.acc||[],s:it.s,bg:it.bg||""}
-          :{id:String(it.id),en:it.en,bg:it.bg||"",def:it.def||""})
-          .filter(it=>type==="opposites"?it.base&&it.opp:type==="prep"?it.s&&it.acc.length:it.en);
-        if(!items.length)return;
-        decks[dk.id]={name:dk.name||dk.id,type,unit:unit.n,section:sec.id,items};
+      (s.decks||[]).forEach(dk=>{const D=tbDeck(dk,decks);if(!D)return;
+        decks[dk.id]=Object.assign(D,{unit:unit.n,section:sec.id});
         sec.decks.push(dk.id);unit.sets.push(dk.id);
       });
       if(sec.decks.length)unit.sections.push(sec);
@@ -526,16 +534,27 @@ function setTextbook(tb){
     units.push(unit);
   });
   if(!units.length)return false;
+  /* Topics (v4.4): the teacher's sheets, one deck per topic (T-<id>), newest first; never part of a unit */
+  const topics=[];
+  (Array.isArray(tb.topics)?tb.topics:[]).forEach(t=>{if(!t||!t.id||topics.some(x=>x.id===String(t.id)))return;
+    const tp={id:String(t.id),title:String(t.title||t.id),updated:String(t.updated||""),sources:(Array.isArray(t.sources)?t.sources:[]).filter(Boolean).map(String),sets:[]};
+    (Array.isArray(t.decks)?t.decks:[]).forEach(dk=>{const D=tbDeck(dk,decks);if(!D)return;decks[dk.id]=Object.assign(D,{topic:tp.id});tp.sets.push(dk.id)});
+    if(tp.sets.length)topics.push(tp)});
   Object.keys(DECKS).forEach(k=>{if(k!=="nb")delete DECKS[k]});
   Object.assign(DECKS,decks);
   UNITS=units.sort((a,b)=>b.num-a.num||String(b.n).localeCompare(String(a.n)));
+  TOPICS=topics.sort((a,b)=>b.updated.localeCompare(a.updated)||a.title.localeCompare(b.title));
   TB=tb;return true;
 }
 setTextbook(TB_DEFAULT);
 try{const c=JSON.parse(localStorage.getItem("maya-tb-cache")||"null");if(c)setTextbook(c)}catch(e){}
-const realDecks=()=>UNITS.flatMap(u=>u.sets);
-const shownDecks=()=>UNITS.flatMap(u=>u.view.flatMap(s=>s.decks)); /* newest unit and section first */
+const realDecks=()=>UNITS.flatMap(u=>u.sets).concat(TOPICS.flatMap(t=>t.sets));
+const shownDecks=()=>UNITS.flatMap(u=>u.view.flatMap(s=>s.decks)).concat(TOPICS.flatMap(t=>t.sets)); /* newest unit and section first, then the topics */
 const unitOf=n=>UNITS.find(u=>u.n===String(n));
+const topicOf=id=>TOPICS.find(t=>t.id===String(id));
+const topicByTitle=title=>{const k=String(title||"").trim().toLowerCase();return k?TOPICS.find(t=>t.title.toLowerCase()===k)||null:null};
+/* where a deck is from: a Focus unit, Topics, or the notebook */
+const deckWhere=d=>{const D=DECKS[d];return d==="nb"?"Vocabulary notebook":D&&D.topic?"Topics":"Unit "+(D?D.unit:"")};
 
 let NB_STATE=GAS?"loading":"none";
 function setNotebook(rows){
@@ -687,7 +706,7 @@ function modesFor(d){
 }
 const twoDir=d=>DECKS[d]&&(DECKS[d].type==="vocab"||DECKS[d].type==="nb");
 function modeTitle(d,mode,dir){const ms=modesFor(d);const m=ms.find(x=>x.mode===mode&&(mode!=="choice"||!twoDir(d)||x.dir===dir))||ms.find(x=>x.mode===mode);return m?m.t:mode}
-function deckTitle(d,p=S.pref){const D=DECKS[d];if(!D)return "Practice";if(D.mix)return "Unit "+D.unit+" · all sets";if(d==="nb")return "Notebook · "+nbLabel(p);return D.name+" · Unit "+D.unit}
+function deckTitle(d,p=S.pref){const D=DECKS[d];if(!D)return "Practice";if(D.mix)return "Unit "+D.unit+" · all sets";if(d==="nb")return "Notebook · "+nbLabel(p);return D.name+" · "+deckWhere(d)}
 function prefValid(p=S.pref){return !!DECKS[p.deck]&&modesFor(p.deck).some(m=>m.mode===p.mode)}
 function prefSummary(p=S.pref){const d=p.deck;const items=deckItems(d,p);const n=p.n==="all"?items.length:Math.min(p.n,items.length);
   const fl=p.mode==="flash"&&twoDir(d)&&p.dir==="bg"?" (Bulgarian first)":"";
@@ -818,7 +837,8 @@ function openDeckSheet(d){
   const draft=Object.assign({},S.pref);
   if(d!=="nb"&&S.pref.deck!==d){/* keep count and flash setting, the range is only for the notebook */}
   const D=DECKS[d];
-  const small=d==="nb"?"Your vocabulary notebook":D.mix?"Focus · "+unitOf(D.unit).view.flatMap(s=>s.decks).map(x=>DECKS[x].name).join(", "):"Unit "+D.unit+" · Focus";
+  const small=d==="nb"?"Your vocabulary notebook":D.mix?"Focus · "+unitOf(D.unit).view.flatMap(s=>s.decks).map(x=>DECKS[x].name).join(", ")
+    :D.topic?"Topic sheet"+((topicOf(D.topic)||{sources:[]}).sources.length?" · "+topicOf(D.topic).sources.join(", "):""):"Unit "+D.unit+" · Focus";
   const draw=sh=>{const c=counts(d,D.items);
     sh.querySelector(".sheet-in").innerHTML=`<div class="grab" aria-hidden="true"></div>
       <div class="sheet-head"><div class="txt"><p>${esc(small)}</p><h2>${esc(D.name)}</h2>
@@ -829,7 +849,7 @@ function openDeckSheet(d){
   openSheet("",draw)}
 
 /* ---------- Home ---------- */
-let OPEN_UNIT=null,SHOW_OLDER=false;
+let OPEN_UNIT=null,SHOW_OLDER=false,SHOW_MORE_TOPICS=false;
 function deckTile(d){const D=DECKS[d];const c=counts(d,D.items);
   return `<button class="tile" data-deck="${esc(d)}"><span class="t">${esc(D.name)}</span>
     <span class="s">${plural(c.total,"word")}</span>${c.mist?`<span class="s bad">${plural(c.mist,"mistake")}</span>`:""}
@@ -847,6 +867,11 @@ function unitsHtml(){const L=UNITS;if(!L.length)return `<p class="hint">The text
   const head=L.slice(0,2),older=L.slice(2);if(older.some(u=>u.n===openUnit()))SHOW_OLDER=true;
   return head.map(unitBlock).join("")+(older.length?`<div class="unit"><button class="unit-head" id="older" aria-expanded="${SHOW_OLDER}"><span class="txt"><b style="font-size:1rem">Older units (${older.length})</b><span>Unit ${esc(older[older.length-1].n)} to Unit ${esc(older[0].n)}</span></span>${icon("chev","chev")}</button>
     ${SHOW_OLDER?`<div class="older">${older.map(unitBlock).join("")}</div>`:""}</div>`:"")}
+/* Topics on Home: the 4 newest topics, the others folded into "More topics (n)" */
+function topicsHtml(){const head=TOPICS.slice(0,4),more=TOPICS.slice(4);
+  const tiles=L=>`<div class="tiles">${L.flatMap(t=>t.sets).map(deckTile).join("")}</div>`;
+  return tiles(head)+(more.length?`<div class="unit"><button class="unit-head" id="moretopics" aria-expanded="${SHOW_MORE_TOPICS}"><span class="txt"><b style="font-size:1rem">More topics (${more.length})</b><span style="overflow-wrap:anywhere">${esc(more.map(t=>t.title).join(", "))}</span></span>${icon("chev","chev")}</button>
+    ${SHOW_MORE_TOPICS?tiles(more):""}</div>`:"")}
 function nbTile(){const all=nbAll();
   if(!all.length)return `<button class="tile wide" ${NB_STATE==="err"?'id="nbretry"':"disabled"}><span class="ic">${icon("note")}</span><span class="col"><span class="t">My notebook</span><span class="s">${NB_MSG[NB_STATE]||NB_MSG.none}</span></span></button>`;
   const c=counts("nb",all);
@@ -875,11 +900,15 @@ SCREENS.home=()=>{const sk=streak();const tl=totalLearned();
       <section class="field-row"><span class="label">Textbook · Focus</span>
         ${unitsHtml()}
       </section>
+      ${TOPICS.length?`<section class="field-row" id="topics"><span class="label">Topics</span>
+        ${topicsHtml()}
+      </section>`:""}
     </div>`,
     dock:contDock(),
     after(){$$("[data-deck]").forEach(b=>b.onclick=()=>openDeckSheet(b.dataset.deck));
       $$("[data-unit]").forEach(b=>b.onclick=()=>{const n=b.dataset.unit;OPEN_UNIT=openUnit()===n?"":n;keep(render)});
       const ol=$("#older");if(ol)ol.onclick=()=>{SHOW_OLDER=!SHOW_OLDER;keep(render)};
+      const mt=$("#moretopics");if(mt)mt.onclick=()=>{SHOW_MORE_TOPICS=!SHOW_MORE_TOPICS;keep(render)};
       const fl=$("#fixl");if(fl)fl.onclick=()=>go("fix");
       const nr=$("#nbretry");if(nr)nr.onclick=()=>{NB_STATE="loading";keep(render);loadNotebook()};
       $("#cont").onclick=()=>startQuiz(contPref(),false);
@@ -891,7 +920,7 @@ SCREENS.mistakes=()=>{const L=allMistakes();const tot=L.reduce((a,x)=>a+x.n,0);
   return{tab:"mistakes",html:appbar("Mistakes",{noBack:true})+`<div class="wrap">
     <header class="pagehead"><h1>${plural(tot,"word")} to practise</h1><p class="muted">Words you got wrong and haven't got right twice since.</p></header>
     ${L.length?`<div class="list">${L.map(x=>`<button class="rowlink" data-mist="${esc(x.d)}"><span class="mic">${icon("redo")}</span>
-      <span class="txt"><b>${esc(DECKS[x.d].name)}</b><span>${x.d==="nb"?"Vocabulary notebook":"Unit "+esc(DECKS[x.d].unit)}</span></span><span class="count-bad">${x.n}</span>${icon("chev","chev")}</button>`).join("")}</div>`
+      <span class="txt"><b>${esc(DECKS[x.d].name)}</b><span>${esc(deckWhere(x.d))}</span></span><span class="count-bad">${x.n}</span>${icon("chev","chev")}</button>`).join("")}</div>`
       :`<div class="card" style="text-align:center;padding:28px 16px"><div class="done-mark" style="margin-top:0">${icon("check")}</div><h2 style="margin-top:12px">No mistakes</h2><p class="muted">Nice work. New mistakes show up here.</p></div>`}
     <p class="hint">Mistakes come back here until you get them right twice.</p></div>`,
     after(){$$("[data-mist]").forEach(b=>b.onclick=()=>{const d=b.dataset.mist;const last=(S.pref.lastByDeck||{})[d];
@@ -910,7 +939,7 @@ SCREENS.progress=()=>{const sk=streak();const days=new Set(S.days);const d0=new 
       <button class="stat bad" id="pm"><b>${totalMistakes()}</b><span>mistakes ›</span></button></div>
     <section class="card"><div class="section-title"><span class="label">This week</span><span class="hint">${wk.filter(x=>x.on).length} of 7 days</span></div>
       <div class="week">${wk.map(x=>`<div>${x.l}<i class="${x.on?"on":""}${x.today?" today":""}"></i></div>`).join("")}</div></section>
-    <section class="card"><span class="label">Learned</span>${decks.map(d=>{const c=counts(d,DECKS[d].items);return `<div class="deckbar"><b>${esc(DECKS[d].name)}${d==="nb"?"":' <span class="muted" style="font-weight:400">· Unit '+esc(DECKS[d].unit)+"</span>"}</b><span>${c.learned} / ${c.total}</span><div class="bar"><i style="width:${pct(c.learned,c.total)}%"></i></div></div>`}).join("")}</section>
+    <section class="card"><span class="label">Learned</span>${decks.map(d=>{const c=counts(d,DECKS[d].items);return `<div class="deckbar"><b>${esc(DECKS[d].name)}${d==="nb"?"":' <span class="muted" style="font-weight:400">· '+esc(deckWhere(d))+"</span>"}</b><span>${c.learned} / ${c.total}</span><div class="bar"><i style="width:${pct(c.learned,c.total)}%"></i></div></div>`}).join("")}</section>
     ${log.length?`<section class="card"><span class="label">Recent practice</span><ul class="log">${log.map(l=>`<li><span>${esc(l.when)} · ${esc(l.what)}</span><b>${esc(l.ok)}/${esc(l.n)}</b></li>`).join("")}</ul></section>`:""}
     <p class="hint">A word counts as learned after 3 right answers in a row.</p>
     <p class="hint" id="sync">${esc(syncText())}</p></div>`,
@@ -1109,7 +1138,7 @@ function finish(){
   const wrong=wrongIds.map(id=>itemLabel(d,Q.items.get(id)));
   const now=new Date();const when=now.toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit"})+" "+now.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
   const dirTxt=twoDir(d)&&Q.mode!=="type"?(Q.dir==="en"?", EN→BG":", BG→EN"):"";
-  const deckName=D.mix?"Unit "+D.unit+" (all sets)":d==="nb"?"Notebook "+nbLabel(Q.p):D.name;
+  const deckName=D.mix?"Unit "+D.unit+" (all sets)":d==="nb"?"Notebook "+nbLabel(Q.p):D.topic?"Topic: "+D.name:D.name;
   const what=deckName+" · "+modeTitle(d,Q.mode,Q.dir)+(Q.mistakes?" (mistakes)":"");
   const logged=n>=MIN_LOG;
   const R={d,ok,n,wrong,wrongItems:wrongIds.map(id=>Q.items.get(id)).filter(Boolean),what,p:Q.p,logged,when,sent:""};
@@ -1149,7 +1178,7 @@ SCREENS.result.label="Results";
 /* ---------- Add words (v4.1): photo -> extractPage (Claude finds the page type) -> check -> save -> undo ---------- */
 const ADD={};
 const DAILY_PHOTOS=20, UNDO_MS=10*60000, NUM_JUMP=5;
-function startAdd(){Object.assign(ADD,{src:null,img:null,rows:[],sec:null,editSec:false,err:"",errKind:"",reason:"",force:"",numErr:null,
+function startAdd(){Object.assign(ADD,{src:null,img:null,rows:[],sec:null,editSec:false,top:null,editTop:false,err:"",errKind:"",reason:"",force:"",numErr:null,
   busy:false,opening:false,file:"",saving:false,saved:null,showDups:false,token:(ADD.token||0)+1});go("addPhoto")}
 const lc=s=>String(s||"").trim().toLowerCase();
 const pairTxt=(a,b)=>b?a+" – "+b:a;
@@ -1169,7 +1198,7 @@ function readPhoto(file){return new Promise((res,rej)=>{
 
 SCREENS.addPhoto=()=>({html:appbar("Add words",{backLabel:"Cancel"})+`<div class="wrap">
     <header class="pagehead"><h1>Take a photo of the page</h1></header>
-    <label class="camera filebtn"><span class="ic">${icon("camera")}</span><b style="font-size:1.1rem">Take a photo</b><span class="muted">A page from your notebook or from Focus.</span>
+    <label class="camera filebtn"><span class="ic">${icon("camera")}</span><b style="font-size:1.1rem">Take a photo</b><span class="muted">A page from your notebook, from Focus or a sheet from your teacher.</span>
       <input type="file" accept="image/*" capture="environment" id="cam" aria-label="Take a photo"></label>
     <label class="btn soft block filebtn">${icon("image")} Choose from Photos<input type="file" accept="image/*" id="lib" aria-label="Choose from Photos"></label>
     <p class="hint">One page at a time, in good light. For your notebook, make sure the numbers and both columns are in the photo.</p>
@@ -1193,7 +1222,7 @@ SCREENS.addReading=()=>{const k=ADD.errKind;
     dock:`<button class="btn primary block" id="hm">${icon("home")} Home</button>`,after:wire(()=>{$("#hm").onclick=goHome})};
   if(k==="other")return{html:bar+`<div class="wrap"><header class="pagehead"><h1>This is not a vocabulary page</h1>
       <p class="muted" id="reason">${esc(ADD.reason||"We couldn't find words to learn on this photo.")}</p></header>${photo}
-      <p class="hint">Take a photo of a page from your notebook or from Focus.</p></div>`,
+      <p class="hint">Take a photo of a page from your notebook, from Focus or a sheet from your teacher.</p></div>`,
     dock:`<button class="btn primary block" id="retry">${icon("camera")} Take another photo</button>`,after:wire(()=>{$("#retry").onclick=()=>{ADD.errKind="";ADD.file="";back()}})};
   return{html:bar+`<div class="wrap">
     <header class="pagehead"><h1>${ADD.err?"We couldn't read this page.":"Reading the words..."}</h1></header>
@@ -1209,9 +1238,10 @@ function runExtract(){const tok=++ADD.token;ADD.busy=true;
     let r=null;try{r=JSON.parse(txt)}catch(e){}
     if(r&&r.error==="daily_limit"){ADD.errKind="limit";ADD.limit=+r.limit>0?+r.limit:DAILY_PHOTOS;render();return}
     const hasNb=r&&r.notebook&&r.notebook.entries&&r.notebook.entries.length,hasTb=r&&r.textbook&&r.textbook.words&&r.textbook.words.length;
-    if(!hasNb&&!hasTb){ADD.errKind="other";ADD.reason=r&&r.page_type==="other"&&r.reason?r.reason:"";render();return}
-    const want=ADD.force==="force-textbook"?"tb":ADD.force==="force-notebook"?"nb":"";
-    ADD.src=want==="tb"&&hasTb||want==="nb"&&hasNb?want:(r.page_type==="textbook"&&hasTb||!hasNb?"tb":"nb");
+    const hasTp=!!(r&&r.topic&&Array.isArray(r.topic.words)&&r.topic.words.length); /* a teacher's sheet (server v4.4) */
+    if(!hasNb&&!hasTb&&!hasTp){ADD.errKind="other";ADD.reason=r&&r.page_type==="other"&&r.reason?r.reason:"";render();return}
+    const want={"force-textbook":"tb","force-notebook":"nb","force-topic":"tp"}[ADD.force]||"";
+    ADD.src=want&&{nb:hasNb,tb:hasTb,tp:hasTp}[want]?want:r.page_type==="topic"&&hasTp||!hasNb&&!hasTb?"tp":(r.page_type==="textbook"&&hasTb||!hasNb?"tb":"nb");
     ADD.numErr=null;ADD.showDups=false;
     prepareRows(r);replace("addReview")})
   .catch(()=>{if(tok!==ADD.token)return;ADD.busy=false;ADD.err="Something went wrong. Check the connection and try again.";render()})}
@@ -1221,6 +1251,13 @@ function prepareRows(r){
       status:e.status,note:e.note||"",options:(e.options||[]).filter(o=>o.en),resolved:e.status==="ok"||e.status==="fixed"}));
     ADD.rows.forEach(x=>{if(x.status==="choose"&&x.options.length<2)x.resolved=true});
     ADD.sec=null;
+  }else if(ADD.src==="tp"){
+    /* a teacher's sheet: the topic is an existing one when the title matches (any case), else a new one */
+    const t=r.topic;const title=String(t.title||"").trim().replace(/\s+/g," ").slice(0,40);const ex=topicByTitle(title);
+    const others=[...new Set((Array.isArray(t.topics_seen)?t.topics_seen:[]).map(x=>String(x||"").trim()).filter(x=>x&&lc(x)!==lc(title)))];
+    ADD.top={id:ex?ex.id:"",title:ex?ex.title:title,read:title,source:String(t.source||"").trim(),others,low:t.confidence!=="high",isNew:!ex&&(!!title||!TOPICS.length),draft:ex?"":title};
+    ADD.editTop=!title;ADD.sec=null;
+    ADD.rows=t.words.map(w=>({kind:"tp",en:w.en||"",bg:w.bg||"",def:w.def||"",pos:w.pos||"",keep:w.core!==false}));
   }else{
     const t=r.textbook;const s=t.section||{};
     let unit=s.unit?String(s.unit).replace(/\D/g,""):"";let lesson=s.lesson?String(s.lesson).trim():"";
@@ -1246,6 +1283,12 @@ function enParts(en){const o=new Set();const n=v=>lc(v).replace(/\s+/g," ");cons
   String(en||"").split(/[=\/]/).forEach(p=>[p,p.replace(/\([^)]*\)/g,"")].forEach(q=>{q=n(q);if(q)o.add(q)}));return o}
 function nbSame(r){if(!r.en.trim())return [];const mine=enParts(r.en);const b=baseNum(normNum(r.num));
   return nbAll().filter(x=>(!b||baseNum(x.id)!==b)&&[...enParts(x.en)].some(v=>mine.has(v))).slice(0,2).map(x=>x.id)}
+/* the words of a topic (all its decks); a new topic has none */
+function topicWords(id){const t=id?topicOf(id):null;const s=new Set();if(!t)return s;
+  t.sets.forEach(d=>DECKS[d].items.forEach(it=>[it.en,it.opp,it.label,it.base].forEach(v=>{if(v)s.add(lc(v))})));return s}
+/* the words already there for the page being checked: null for the notebook, the unit for Focus, the topic for a sheet */
+const addWords=()=>ADD.src==="nb"?null:ADD.src==="tp"?topicWords(ADD.top&&ADD.top.id):unitWords(ADD.sec&&ADD.sec.unit);
+const topTitle=()=>ADD.top?String(ADD.top.title||"").trim():"";
 function unitWords(unit){const u=unitOf(unit);const s=new Set();if(!u)return s;
   u.sets.forEach(d=>DECKS[d].items.forEach(it=>[it.en,it.opp,it.label,it.base].forEach(v=>{if(v)s.add(lc(v))})));return s}
 function rowState(r,uw){
@@ -1281,8 +1324,20 @@ function secCard(){const s=ADD.sec;const units=Math.max(10,...UNITS.map(u=>u.num
     ${exist?`<p class="hint">The words are added to the set “${esc(DECKS[exist].name)}”.</p>`:""}
     <button class="btn primary" id="secdone" style="min-height:44px">Done</button>`:""}
   </section>`}
+function topCard(){const t=ADD.top;const has=!!topTitle();
+  const head=`<div class="goes"><div class="txt"><span class="label">Goes to</span><b>${has?"Topics · "+esc(t.title):"Pick the topic"}</b>
+    ${has&&t.low&&!ADD.editTop?'<span class="hint">We are not sure about the topic. Is it right?</span>':""}</div>
+    ${ADD.editTop?"":`<button class="btn soft" id="chtop" style="min-height:44px;padding:8px 14px">Change</button>`}</div>`;
+  if(!ADD.editTop)return `<section class="card field-row" id="topcard">${head}</section>`;
+  return `<section class="card field-row" id="topcard">${head}
+    <span class="label" style="margin-top:6px">Topic</span>
+    <div class="chips">${TOPICS.map(x=>`<button class="chip" data-tp="${esc(x.id)}" aria-pressed="${!t.isNew&&t.id===x.id}">${esc(x.title)}</button>`).join("")}<button class="chip" data-tpnew aria-pressed="${!!t.isNew}">New topic</button></div>
+    ${t.isNew?`<span class="label" style="margin-top:6px">Name of the new topic</span>
+    <input class="field" id="toptitle" value="${esc(t.draft)}" placeholder="e.g. Food" maxlength="40">`:""}
+    ${t.isNew||has?`<button class="btn primary" id="topdone" style="min-height:44px" ${t.isNew&&!String(t.draft||"").trim()?"disabled":""}>Done</button>`:""}
+  </section>`}
 function rowHtml(r,i,uw,ro){const stt=rowState(r,uw);const dis=ro?" disabled":"";
-  if(r.kind==="tb"){const note=stt.dup?`<div class="note info">${icon("alert")}<span>Already in Unit ${esc(ADD.sec.unit)}. It will not be added again.</span></div>`:"";
+  if(r.kind==="tb"||r.kind==="tp"){const note=stt.dup?`<div class="note info">${icon("alert")}<span>Already in ${r.kind==="tp"?esc(topTitle()):"Unit "+esc(ADD.sec.unit)}. It will not be added again.</span></div>`:"";
     return `<div class="wrow tb${stt.save?"":" off"}" data-row="${i}"><button class="check" data-keep aria-pressed="${r.keep&&!stt.dup}" aria-label="Add this word" ${stt.dup?"disabled":""}>${icon("check")}</button>
       <div class="pair"><input value="${esc(r.en)}" aria-label="English" data-f="en" lang="en"${dis}><input value="${esc(r.bg)}" aria-label="Bulgarian" data-f="bg" placeholder="Bulgarian" lang="bg"${dis}></div>
       ${ro?"":`<button class="iconbtn" data-del aria-label="Remove">${icon("trash")}</button>`}${note}</div>`}
@@ -1304,15 +1359,17 @@ function rowHtml(r,i,uw,ro){const stt=rowState(r,uw);const dis=ro?" disabled":""
     <div class="pair"><input value="${esc(r.en)}" aria-label="English" data-f="en" lang="en"${dis}><input value="${esc(r.bg)}" aria-label="Bulgarian" data-f="bg" placeholder="Bulgarian" lang="bg"${dis}></div>
     ${ro?"":`<button class="iconbtn" data-del aria-label="Remove">${icon("trash")}</button>`}${note}</div>`}
 
-SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.sec&&ADD.sec.unit);
+/* the other two page types, to read the photo again as one of them (counts as a photo read) */
+const REREAD=[["nb","force-notebook","Notebook"],["tb","force-textbook","Focus"],["tp","force-topic","Teacher's sheet"]];
+const rereadRow=()=>`<div class="reread" id="reread"><span>Wrong type? Read it as:</span>${REREAD.filter(x=>x[0]!==ADD.src).map(([k,f,l])=>`<button class="chip" id="rr-${k}" data-reread="${f}">${l}</button>`).join("")}</div>`;
+SCREENS.addReview=()=>{const nb=ADD.src==="nb",tp=ADD.src==="tp";const uw=addWords();
   const states=ADD.rows.map(r=>rowState(r,uw));
-  const left=states.filter(s=>s.block).length;const n=states.filter(s=>s.save).length;const secBad=!nb&&!secOk();
+  const left=states.filter(s=>s.block).length;const n=states.filter(s=>s.save).length;const secBad=!nb&&!tp&&!secOk(),topBad=tp&&!topTitle();
   const mainIdx=[],dupIdx=[];states.forEach((s,i)=>(s.dup?dupIdx:mainIdx).push(i));
-  const where=nb?"your notebook":"Unit "+esc(ADD.sec&&ADD.sec.unit);
+  const where=nb?"your notebook":tp?esc(topTitle()):"Unit "+esc(ADD.sec&&ADD.sec.unit);
   const allDup=ADD.rows.length>0&&dupIdx.length===ADD.rows.length;
   const numErr=nb&&!allDup?(nbNumCheck(states)||ADD.numErr):null;
-  const label=nb?"Notebook page":"Textbook page";
-  const other=nb?"Not a notebook page? Read it as a textbook page":"Not a textbook page? Read it as a notebook page";
+  const label=nb?"Notebook page":tp?"Topic sheet":"Textbook page";
   const wireBack=()=>{$("#rvback").onclick=()=>{if(ADD.saving)return;ADD.file="";if(allDup){back();return}
     openSheet(`<div class="sheet-head"><div class="txt"><h2>Discard these words?</h2><p>The words from this photo will not be saved.</p></div></div>
       <div style="display:flex;gap:8px"><button class="btn ghost" id="dy" style="flex:1">Discard</button><button class="btn primary" id="dn" style="flex:1">Keep checking</button></div>`,
@@ -1323,11 +1380,11 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
     let range="";
     if(nb){const ids=states.map(s=>s.dup&&s.dup.id).filter(Boolean).sort((a,b)=>a.localeCompare(b,"en",{numeric:true}));
       range=ids.length?" (#"+ids[0]+(ids.length>1?" to #"+ids[ids.length-1]:"")+")":""}
-    const inWhere=nb?"there"+range:"in Unit "+esc(ADD.sec.unit)+(secOk()?" · "+esc(ADD.sec.lesson):"");
+    const inWhere=nb?"there"+range:tp?"in "+where:"in Unit "+esc(ADD.sec.unit)+(secOk()?" · "+esc(ADD.sec.lesson):"");
     return{html:appbar("Check the words",{backLabel:"Photo",backId:"rvback"})+`<div class="wrap">
       <div class="msgcard" id="already"><div class="done-mark info">${icon("check")}</div>
         <span class="label">${label}</span>
-        <h1>This page is already in ${nb?"your notebook":"Unit "+esc(ADD.sec.unit)}</h1>
+        <h1>This page is already in ${nb||tp?where:"Unit "+esc(ADD.sec.unit)}</h1>
         <p class="muted">${ADD.rows.length===1?"The word is":"All "+ADD.rows.length+" words are"} already ${inWhere}. There is nothing new to save.</p></div>
       <button class="btn soft block" id="dups">${ADD.showDups?"Hide the words":"Show the words"}</button>
       ${ADD.showDups?dupList(true):""}</div>`,
@@ -1336,10 +1393,11 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
         $("#dups").onclick=()=>{ADD.showDups=!ADD.showDups;keep(render)}}};
   }
   /* textbook words that are not core come unticked: say so, the head counts the new words */
-  const none=!nb&&!n&&mainIdx.some(i=>!ADD.rows[i].keep&&ADD.rows[i].en.trim());
+  const none=!nb&&!n&&!topBad&&mainIdx.some(i=>!ADD.rows[i].keep&&ADD.rows[i].en.trim());
   let btn;
   if(ADD.saving)btn=`<button class="btn primary block" disabled>Saving...</button>`;
   else if(secBad)btn=`<button class="btn primary block" disabled>Pick the section first</button>`;
+  else if(topBad)btn=`<button class="btn primary block" disabled>Pick the topic first</button>`;
   else if(left)btn=`<button class="btn primary block" disabled>Check ${plural(left,"word")} first</button>`;
   else if(numErr)btn=`<button class="btn primary block" disabled>Check the numbers first</button>`;
   else if(!n)btn=`<button class="btn primary block" disabled>${none?"Tick the words to add":"No new words to save"}</button>`;
@@ -1352,9 +1410,10 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
     <header class="pagehead"><span class="label">${label}</span><h1>${head}</h1>
       ${dupLine}
       <p class="muted">${left?`<b style="color:var(--warn)">${left} to check.</b> Choose or fix them, then save.`:nb?"All checked. Fix anything else you see, then save.":none?"Tick the words you want to add, then save.":"Untick the words you don't need, fix anything you see, then save."}</p>
-      <button class="textbtn" id="reread" style="align-self:flex-start;text-align:left">${other}</button></header>
+      ${rereadRow()}</header>
     ${numCard}
-    ${nb?"":secCard()}
+    ${nb?"":tp?topCard():secCard()}
+    ${tp&&ADD.top.others.length?`<p class="infoline" id="twotopics">${icon("alert")}<span>This photo has more than one topic. Only the words for ${esc(ADD.top.read||topTitle())} are here. Take a separate photo of the ${esc(ADD.top.others.join(" and "))} ${ADD.top.others.length===1?"page":"pages"}.</span></p>`:""}
     <div class="rev">${mainIdx.map(i=>rowHtml(ADD.rows[i],i,uw)).join("")}</div>
     ${dupIdx.length?`<button class="btn soft block" id="dups">${ADD.showDups?"Hide":"Show"} the ${plural(dupIdx.length,"word")} already in ${where}</button>
       ${ADD.showDups?dupList():""}`:""}
@@ -1362,7 +1421,8 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
     dock:btn,
     after(){
       wireBack();
-      $("#reread").onclick=()=>{if(ADD.busy||ADD.saving)return;ADD.force=nb?"force-textbook":"force-notebook";ADD.err="";ADD.errKind="";replace("addReading")};
+      /* R2 guards: nothing while a read or a save runs; the same file may be read again, as after "Take another photo" */
+      $$("[data-reread]").forEach(b=>b.onclick=()=>{if(ADD.busy||ADD.saving)return;ADD.force=b.dataset.reread;ADD.err="";ADD.errKind="";ADD.file="";replace("addReading")});
       $$("[data-row]").forEach(row=>{const i=+row.dataset.row;const r=ADD.rows[i];
         row.querySelectorAll("[data-f]").forEach(inp=>{inp.oninput=()=>{r[inp.dataset.f]=inp.value};
           inp.onchange=()=>{if(inp.dataset.f==="num")r.num=normNum(inp.value);
@@ -1377,9 +1437,17 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
           else{const o=r.options[+v];Object.assign(r,{en:o.en,bg:o.bg,resolved:true})}
           keep(render)})});
       $("#addrow").onclick=()=>{const last=ADD.rows[ADD.rows.length-1];const nx=nb&&last&&parseInt(last.num,10)?String(parseInt(last.num,10)+1):"";
-        ADD.rows.push(nb?{kind:"nb",num:nx,en:"",bg:"",wen:"",wbg:"",status:"ok",note:"",options:[],resolved:true,manual:true}:{kind:"tb",en:"",bg:"",def:"",pos:"",keep:true,manual:true});
+        ADD.rows.push(nb?{kind:"nb",num:nx,en:"",bg:"",wen:"",wbg:"",status:"ok",note:"",options:[],resolved:true,manual:true}:{kind:tp?"tp":"tb",en:"",bg:"",def:"",pos:"",keep:true,manual:true});
         keep(render);const el=$(`[data-row="${ADD.rows.length-1}"]`);if(el){const inp=el.querySelector('[data-f="en"]');if(inp)inp.focus()}};
-      if(!nb){const cs=$("#chsec");if(cs)cs.onclick=()=>{ADD.editSec=true;keep(render)};
+      if(tp){const t=ADD.top;const ct=$("#chtop");if(ct)ct.onclick=()=>{ADD.editTop=true;if(t.isNew&&!t.draft)t.draft=t.title;keep(render)};
+        $$("[data-tp]").forEach(b=>b.onclick=()=>{const x=topicOf(b.dataset.tp);if(!x)return;Object.assign(t,{id:x.id,title:x.title,isNew:false,low:false});keep(render)});
+        const tn=$("[data-tpnew]");if(tn)tn.onclick=()=>{if(!t.isNew)Object.assign(t,{id:"",title:"",isNew:true});keep(render);const f=$("#toptitle");if(f)f.focus()};
+        const ti=$("#toptitle"),td=$("#topdone");if(ti)ti.oninput=()=>{t.draft=ti.value;if(td)td.disabled=!ti.value.trim()};
+        /* Done: a new name that is an existing topic (any case) is that topic */
+        if(td)td.onclick=()=>{if(t.isNew){const nm=String(t.draft||"").trim().replace(/\s+/g," ").slice(0,40);if(!nm)return;const ex=topicByTitle(nm);
+            Object.assign(t,ex?{id:ex.id,title:ex.title,isNew:false}:{id:"",title:nm})}
+          ADD.editTop=false;t.low=false;keep(render)}}
+      else if(!nb){const cs=$("#chsec");if(cs)cs.onclick=()=>{ADD.editSec=true;keep(render)};
         $$("[data-su]").forEach(b=>b.onclick=()=>{ADD.sec.unit=b.dataset.su;ADD.sec.lesson="";keep(render)});
         $$("[data-sl]").forEach(b=>b.onclick=()=>{ADD.sec.lesson=b.dataset.sl;const ex=lessonDeck(ADD.sec.unit,ADD.sec.lesson);if(ex)ADD.sec.title=DECKS[ex].name;ADD.sec.low=false;keep(render)});
         const ti=$("#sectitle");if(ti)ti.oninput=()=>{ADD.sec.title=ti.value};
@@ -1403,22 +1471,26 @@ function corrFor(r){
 function reloadNotebook(){return call("getNotebook").then(t2=>{let rws=[];try{rws=JSON.parse(t2||"[]")}catch(e){}
   if(rws.length){setNotebook(rws);try{localStorage.setItem("maya-nb-cache",JSON.stringify(rws))}catch(e){}}}).catch(()=>{})}
 function doSave(){if(ADD.saving)return;
-  const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.sec.unit);
+  const nb=ADD.src==="nb",tp=ADD.src==="tp";if(tp&&!topTitle())return;const uw=addWords();
   const rows=ADD.rows.filter(r=>rowState(r,uw).save);if(!rows.length)return;
   const sendRows=nb?ADD.rows.filter(r=>r.en.trim()&&!rowState(r,uw).fix):rows; /* never send a row whose number must be changed */
   ADD.saving=true;keep(render);
   const corrections=nb?rows.map(corrFor).filter(Boolean):[];
-  const s=ADD.sec;const title=nb?"":(s.title||"").trim()||"Lesson "+s.lesson;
+  const s=ADD.sec;const title=nb?"":tp?topTitle():(s.title||"").trim()||"Lesson "+s.lesson;
   const dups=nb?0:ADD.rows.filter(r=>rowState(r,uw).dup).length; /* not sent, so the server cannot count them */
   const noSave=()=>{ADD.saving=false;toast("Could not save. Check the connection and try again.");if(top_().name==="addReview")keep(render)};
   /* the answer can be lost after the server saved (timeout, network): savedAnyway reads the words again */
-  const fail=()=>savedAnyway(nb,rows,sendRows,corrections,title,dups).then(ok=>{if(!ok)noSave()},noSave);
+  const fail=()=>savedAnyway(ADD.src,rows,sendRows,corrections,title,dups).then(ok=>{if(!ok)noSave()},noSave);
   if(nb){
     const entries=sendRows.map(r=>({num:normNum(r.num)||null,en:r.en.trim(),bg:r.bg.trim()}));
     call("saveNotebookWords",JSON.stringify({entries,corrections})).then(txt=>{const res=JSON.parse(txt);
       if(res.error==="numbers"){ADD.saving=false;ADD.numErr={last:res.last,first:res.first};if(top_().name==="addReview")keep(render);return}
       const filled=fillCorrNums(corrections,res.added||[]);
       return reloadNotebook().then(()=>loadCorrections()).then(()=>{patchCorr(filled);ADD.saving=false;ADD.saved={kind:"nb",res,corrections,at:Date.now()};replace("addSaved")})}).catch(fail);
+  }else if(tp){
+    const words=rows.map(r=>({en:r.en.trim(),bg:r.bg.trim(),def:r.def||"",pos:r.pos||""}));const t=ADD.top;
+    call("saveTopicWords",JSON.stringify({topicId:t.id,title,source:t.source,words})).then(txt=>{const res=JSON.parse(txt);
+      return loadTextbook().then(()=>{ADD.saving=false;ADD.saved={kind:"tp",res,title:res.title||title,dups,at:Date.now()};replace("addSaved")})}).catch(fail);
   }else{
     const words=rows.map(r=>({en:r.en.trim(),bg:r.bg.trim(),def:r.def||"",pos:r.pos||""}));
     call("saveTextbookWords",JSON.stringify({unit:s.unit,lesson:s.lesson,title,words})).then(txt=>{const res=JSON.parse(txt);
@@ -1429,7 +1501,7 @@ function doSave(){if(ADD.saving)return;
    with Undo when the server names the batch of that save (lastBatch, Code.gs v4.3) and it holds exactly these words.
    Resolves false (the caller says "Could not save") when the words are not all there; rejects when the read fails. */
 function lostBatch(src,ok){return call("lastBatch",src).then(t=>{const r=JSON.parse(t);return r&&r.batch&&r.items&&ok(r.items)?r:null}).catch(()=>null)}
-function savedAnyway(nb,rows,sendRows,corrections,title,dups){
+function savedAnyway(src,rows,sendRows,corrections,title,dups){const nb=src==="nb";
   const show=(sv,b)=>{ADD.saving=false;ADD.saved=Object.assign(sv,{at:Date.now()-(b&&b.age||0),noUndo:!b});sv.res.batch=b?b.batch:"";replace("addSaved");return true};
   if(nb)return call("getNotebook").then(t=>{const rws=JSON.parse(t||"null");if(!Array.isArray(rws)||!rws.length)return false;
     setNotebook(rws);try{localStorage.setItem("maya-nb-cache",JSON.stringify(rws))}catch(e){}
@@ -1443,24 +1515,32 @@ function savedAnyway(nb,rows,sendRows,corrections,title,dups){
   const s=ADD.sec;
   return call("getTextbook").then(t=>{const tb=JSON.parse(t||"null");if(!setTextbook(tb))return false;
     try{localStorage.setItem("maya-tb-cache",t)}catch(e){}
+    if(src==="tp"){/* the topic as the server found or made it: by id, else by title */
+      const tpc=(ADD.top.id&&topicOf(ADD.top.id))||topicByTitle(title);if(!tpc)return false;
+      const tw=topicWords(tpc.id);const m=new Map();rows.forEach(r=>{const en=r.en.trim();if(!m.has(lc(en)))m.set(lc(en),en)});
+      if([...m.keys()].some(k=>!tw.has(k)))return false;
+      const added=[...m.values()];const skipped=rows.slice(added.length).map(r=>r.en.trim());
+      return lostBatch("Topic",it=>{const x=it.topic;return !!x&&String(x.id)===tpc.id&&Array.isArray(x.ids)&&
+        x.ids.length===m.size&&x.ids.every(id=>m.has(lc(String(id).replace(/ \(\d+\)$/,""))))})
+        .then(b=>show({kind:"tp",res:{topic:tpc.id,title:tpc.title,deck:b?b.items.topic.deck:tpc.sets[0],added,skipped},title:tpc.title,dups},b))}
     const uw=unitWords(s.unit);const m=new Map();rows.forEach(r=>{const en=r.en.trim();if(!m.has(lc(en)))m.set(lc(en),en)});
     if([...m.keys()].some(k=>!uw.has(k)))return false;
     const added=[...m.values()];const skipped=rows.slice(added.length).map(r=>r.en.trim());
     return lostBatch("Textbook",it=>{const x=it.textbook;return !!x&&String(x.unit)===String(s.unit)&&x.deck==="L"+s.lesson&&Array.isArray(x.ids)&&
       x.ids.length===m.size&&x.ids.every(id=>m.has(lc(String(id).replace(/ \(\d+\)$/,""))))})
       .then(b=>show({kind:"tb",res:{unit:s.unit,deck:"L"+s.lesson,added,skipped},title,dups},b))})}
-SCREENS.addSaved=()=>{const sv=ADD.saved;const res=sv.res;const n=res.added.length;const nb=sv.kind==="nb";
+SCREENS.addSaved=()=>{const sv=ADD.saved;const res=sv.res;const n=res.added.length;const nb=sv.kind==="nb",tp=sv.kind==="tp";
   const nums=nb?res.added.map(a=>a.num).sort((a,b)=>a.localeCompare(b,"en",{numeric:true})):[];
-  const where=nb?(n?"Notebook #"+nums[0]+(n>1?" to #"+nums[nums.length-1]:""):"Notebook"):"Unit "+res.unit+" · "+(ADD.sec.lesson)+" · "+sv.title;
+  const where=nb?(n?"Notebook #"+nums[0]+(n>1?" to #"+nums[nums.length-1]:""):"Notebook"):tp?"Topics · "+sv.title:"Unit "+res.unit+" · "+(ADD.sec.lesson)+" · "+sv.title;
   /* the server says why a notebook word was skipped: "already in the notebook", or its number is used by another word */
   const sk=nb?res.skipped.filter(x=>!x||!x.reason||x.reason==="already in the notebook").length:(sv.dups||0)+res.skipped.length;
-  const other=nb?res.skipped.length-sk:0;const inWhere=nb?"your notebook":"Unit "+res.unit;
+  const other=nb?res.skipped.length-sk:0;const inWhere=nb?"your notebook":tp?sv.title:"Unit "+res.unit;
   const canUndo=n&&res.batch&&!sv.undone&&Date.now()-sv.at<UNDO_MS;
   return{html:`<div class="wrap" style="padding-top:calc(24px + env(safe-area-inset-top,0px))">
     <div style="text-align:center;display:flex;flex-direction:column;gap:6px"><div class="done-mark">${icon("check")}</div>
     <h1 style="font-size:1.7rem">${n?plural(n,"word")+" added":"No new words"}</h1>
     <p class="muted">${esc(where)}</p>
-    ${sk&&n?`<p id="skipline">${sk} ${sk===1?"was":"were"} already in ${inWhere}, so ${sk===1?"it was":"they were"} not added again.</p>`:""}
+    ${sk&&n?`<p id="skipline">${sk} ${sk===1?"was":"were"} already in ${esc(inWhere)}, so ${sk===1?"it was":"they were"} not added again.</p>`:""}
     ${other?`<p id="otherline">${plural(other,"word")} could not be added because ${other===1?"its number is":"their numbers are"} already used.</p>`:""}
     <p class="hint">${n?"They are saved online, on all your devices.":other?"Fix the numbers and save the page again.":"All the words from this page are already in the app."}</p></div>
     ${canUndo?`<div class="undo"><button class="btn ghost" id="undo">${icon("redo")} Undo</button><span class="hint">You can undo this for 10 minutes.</span></div>`:""}
@@ -1474,7 +1554,7 @@ SCREENS.addSaved=()=>{const sv=ADD.saved;const res=sv.res;const n=res.added.leng
   after(){$("#hm").onclick=goHome;
     const un=$("#undo");if(un)un.onclick=()=>{
       if(Date.now()-sv.at>=UNDO_MS){sv.late=true;keep(render);return}
-      openSheet(`<div class="sheet-head"><div class="txt"><h2>Undo ${n===1?"this word":"these "+n+" words"}?</h2><p>${n===1?"It":"They"} will be removed from ${nb?"your notebook":esc("Unit "+res.unit+" · "+ADD.sec.lesson)}.</p></div></div>
+      openSheet(`<div class="sheet-head"><div class="txt"><h2>Undo ${n===1?"this word":"these "+n+" words"}?</h2><p>${n===1?"It":"They"} will be removed from ${nb?"your notebook":tp?esc(sv.title):esc("Unit "+res.unit+" · "+ADD.sec.lesson)}.</p></div></div>
         <div style="display:flex;gap:8px"><button class="btn ghost" id="uy" style="flex:1">Undo</button><button class="btn primary" id="un" style="flex:1">Keep them</button></div>`,
         sh=>{sh.querySelector("#un").onclick=()=>closeSheet();
           sh.querySelector("#uy").onclick=()=>{const b=sh.querySelector("#uy");b.disabled=true;b.textContent="Removing...";
@@ -1488,7 +1568,7 @@ SCREENS.addSaved=()=>{const sv=ADD.saved;const res=sv.res;const n=res.added.leng
       if(nb){const ids=new Set(nums);const items=DECKS.nb.items.filter(x=>ids.has(x.id));if(!items.length){goHome();return}
         const p=Object.assign({},S.pref,{deck:"nb",mode:"flash",dir:"en",n:"all",nbLast:0,nbFrom:items[0].num,nbTo:items[items.length-1].num});
         TAB="home";NAV.stack=[{name:"home",params:{root:true}}];startQuiz(p,false,items)}
-      else{const d=res.deck;goHome();if(DECKS[d]){OPEN_UNIT=DECKS[d].unit;keep(render);openDeckSheet(d)}}}}}};
+      else{const d=res.deck;goHome();if(DECKS[d]){if(!DECKS[d].topic){OPEN_UNIT=DECKS[d].unit;keep(render)}openDeckSheet(d)}}}}}};
 SCREENS.addSaved.label="Home";
 
 /* ---------- start ---------- */
