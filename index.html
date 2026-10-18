@@ -576,13 +576,15 @@ function saveLocal(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 function save(){S.updated=Date.now();saveLocal();if(GAS){clearTimeout(pushTimer);pushTimer=setTimeout(push,1500)}}
 /* The cloud file is only written with state merged with it: push() reads and merges getState first when the
    last successful read is missing or older than PULL_AGE. If the read or the write fails, it tries again later. */
-let PULLED_AT=0,PULLING=null,retryTimer=null;
+let PULLED_AT=0,PULLING=null,retryTimer=null,BAD_STATE=false;
+/* bad_state: the server refused the progress, or progress.json could not be read (not a connection problem) */
+const badState=e=>/bad_state/.test(String(e&&e.message||e));
 const PULL_AGE=60000,RETRY_MS=30000;
 function retryLater(){clearTimeout(retryTimer);retryTimer=setTimeout(push,RETRY_MS)}
 function push(){clearTimeout(pushTimer);pushTimer=null;clearTimeout(retryTimer);retryTimer=null;if(!GAS)return;
   if(!PULLED_AT||Date.now()-PULLED_AT>PULL_AGE){pullState().then(send,retryLater);return}
   send()}
-function send(){call("saveState",JSON.stringify(S)).then(()=>{cloud="ok";syncChanged()}).catch(()=>{cloud="err";syncChanged();retryLater()})}
+function send(){call("saveState",JSON.stringify(S)).then(()=>{cloud="ok";syncChanged()}).catch(e=>{cloud="err";BAD_STATE=badState(e);syncChanged();retryLater()})}
 function merge(a,b){
   const out={st:{},pref:(b.updated||0)>(a.updated||0)?(b.pref||a.pref):a.pref,updated:Math.max(a.updated||0,b.updated||0),resetAt:Math.max(a.resetAt||0,b.resetAt||0)};
   const as=a.st||{},bs=b.st||{};
@@ -592,17 +594,17 @@ function merge(a,b){
   out.log=[...(a.log||[]),...(b.log||[])].filter(l=>{const k=(l.ts||l.when)+"|"+l.what;if(seen.has(k))return false;seen.add(k);return true})
     .sort((p,q)=>(p.ts||0)-(q.ts||0)).slice(-30);
   return out}
-const syncText=()=>cloud==="ok"?"Your progress is saved online, on all your devices.":cloud==="syncing"?"Loading your progress...":cloud==="err"?"No connection: progress is saved on this device and will sync later.":"Your progress is saved on this device only.";
+const syncText=()=>cloud==="ok"?"Your progress is saved online, on all your devices.":cloud==="syncing"?"Loading your progress...":cloud==="err"?(BAD_STATE?"Your progress could not be saved online. It is safe on this device.":"No connection: progress is saved on this device and will sync later."):"Your progress is saved on this device only.";
 function syncChanged(){const n=$("#sync");if(n)n.textContent=syncText();const t=top_();if(t&&t.name==="home"&&NAV.stack.length===1&&!SHEET_OPEN){const has=!!$("#syncerr");if(has!==(cloud==="err"))keep(render)}}
 function refreshRoot(){const t=top_();if(!t||SHEET_OPEN||NAV.stack.length!==1)return;if(["home","mistakes","progress"].includes(t.name))keep(render)}
 /* reads progress.json and merges it into S; an unreadable answer counts as a failure, never as an empty cloud */
 function pullState(){if(PULLING)return PULLING;
   PULLING=call("getState").then(txt=>{let srv={};
-    if(txt){srv=JSON.parse(txt);if(!srv||typeof srv!=="object"||Array.isArray(srv))throw new Error("Bad progress file")}
+    if(txt){try{srv=JSON.parse(txt)}catch(e){srv=null}if(!srv||typeof srv!=="object"||Array.isArray(srv))throw new Error("bad_state")}
     if((srv.resetAt||0)<RESET_AT)srv={};
     S=merge(S,srv);migratePref();saveLocal();PULLED_AT=Date.now();
     cloud="ok";refreshRoot();syncChanged()})
-  .catch(e=>{cloud="err";syncChanged();throw e}).finally(()=>{PULLING=null});
+  .catch(e=>{cloud="err";BAD_STATE=badState(e);syncChanged();throw e}).finally(()=>{PULLING=null});
   return PULLING}
 function pull(){if(!GAS)return;
   pullState().then(push,retryLater);
@@ -1342,7 +1344,7 @@ SCREENS.addReview=()=>{const nb=ADD.src==="nb";const uw=nb?null:unitWords(ADD.se
           keep(render)})});
       $("#addrow").onclick=()=>{const last=ADD.rows[ADD.rows.length-1];const nx=nb&&last&&parseInt(last.num,10)?String(parseInt(last.num,10)+1):"";
         ADD.rows.push(nb?{kind:"nb",num:nx,en:"",bg:"",wen:"",wbg:"",status:"ok",note:"",options:[],resolved:true,manual:true}:{kind:"tb",en:"",bg:"",def:"",pos:"",keep:true,manual:true});
-        keep(render);const rows=$$("[data-row]");const el=rows[rows.length-1];if(el){const inp=el.querySelector('[data-f="en"]');if(inp)inp.focus()}};
+        keep(render);const el=$(`[data-row="${ADD.rows.length-1}"]`);if(el){const inp=el.querySelector('[data-f="en"]');if(inp)inp.focus()}};
       if(!nb){const cs=$("#chsec");if(cs)cs.onclick=()=>{ADD.editSec=true;keep(render)};
         $$("[data-su]").forEach(b=>b.onclick=()=>{ADD.sec.unit=b.dataset.su;ADD.sec.lesson="";keep(render)});
         $$("[data-sl]").forEach(b=>b.onclick=()=>{ADD.sec.lesson=b.dataset.sl;const ex=lessonDeck(ADD.sec.unit,ADD.sec.lesson);if(ex)ADD.sec.title=DECKS[ex].name;ADD.sec.low=false;keep(render)});
@@ -1416,9 +1418,10 @@ SCREENS.addSaved=()=>{const sv=ADD.saved;const res=sv.res;const n=res.added.leng
         sh=>{sh.querySelector("#un").onclick=()=>closeSheet();
           sh.querySelector("#uy").onclick=()=>{const b=sh.querySelector("#uy");b.disabled=true;b.textContent="Removing...";
             call("undoBatch",res.batch).then(txt=>{let r={};try{r=JSON.parse(txt)}catch(e){}
-              if(r.error==="too_late"||r.error==="not_found"){closeSheet(true);sv.late=r.error==="too_late";sv.undone=r.error==="not_found";
-                if(sv.undone)toast("Already removed.");keep(render);return}
-              return (nb?reloadNotebook().then(()=>loadCorrections()):loadTextbook()).then(()=>{closeSheet(true);sv.undone=true;toast("Removed.");goHome()})})
+              if(r.error==="too_late"){closeSheet(true);sv.late=true;keep(render);return}
+              /* not_found: already removed elsewhere; reload the words like a successful undo */
+              return (nb?reloadNotebook().then(()=>loadCorrections()):loadTextbook())
+                .then(()=>{closeSheet(true);sv.undone=true;toast(r.error==="not_found"?"Already removed.":"Removed.");goHome()})})
             .catch(()=>{closeSheet(true);toast("Could not undo. Check the connection and try again.")})}})};
     const pr=$("#pr");if(pr)pr.onclick=()=>{
       if(nb){const ids=new Set(nums);const items=DECKS.nb.items.filter(x=>ids.has(x.id));if(!items.length){goHome();return}
