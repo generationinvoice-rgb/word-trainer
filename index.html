@@ -17,6 +17,7 @@
 /* Word Trainer v4.1 (17.10.2026): Add words starts with the photo (no Source step), clearer duplicate/limit/number messages, Undo, no overscroll. v4: runs on GitHub Pages (fetch to Apps Script) and inside /exec (google.script.run). v3: Home with hero, tiles and units, bottom sheet for "how", tab bar, Add words. */
 :root{
   --bg:#EDF1F7; --surface:#FFFFFF; --surface-2:#F5F7FB; --ink:#16233B; --muted:#5B6884; --line:#D3DBE8;
+  --seg-ink:#4C5975; /* unselected segment text on --line: 5.0:1 (muted gives 4.0:1) */
   --accent:#1F4E8C; --accent-ink:#FFFFFF; --accent-soft:#DCE7F7;
   --hero:#1F4E8C; --hero-2:#163A6B; --hero-ink:#FFFFFF; --hero-muted:rgba(255,255,255,.78); --hero-chip:rgba(255,255,255,.14);
   --marker:#FBD55B; --marker-ink:#16233B; --rule:#DCE6F5; --redrule:#E6A3A0;
@@ -27,14 +28,14 @@
   --r:12px; --r-lg:18px;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0F1626; --surface:#18223A; --surface-2:#1D2945; --ink:#E7ECF6; --muted:#9BA7C0; --line:#2B3756;
+  --bg:#0F1626; --surface:#18223A; --surface-2:#1D2945; --ink:#E7ECF6; --muted:#9BA7C0; --line:#2B3756; --seg-ink:#9BA7C0;
   --accent:#86ADEB; --accent-ink:#0F1626; --accent-soft:#22345A;
   --hero:#1B3260; --hero-2:#14264A; --hero-ink:#F1F5FC; --hero-muted:rgba(241,245,252,.75); --hero-chip:rgba(255,255,255,.10);
   --marker:#E9BC3A; --marker-ink:#16233B; --rule:#222E4A; --redrule:#6E3B44;
   --good:#58C892; --good-bg:#16352A; --bad:#F2857A; --bad-bg:#3A1F24; --warn:#F0C25A; --warn-bg:#3A3018;
   --scrim:rgba(0,0,0,.6); --shadow:0 10px 30px -14px rgba(0,0,0,.7); color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0F1626; --surface:#18223A; --surface-2:#1D2945; --ink:#E7ECF6; --muted:#9BA7C0; --line:#2B3756;
+  --bg:#0F1626; --surface:#18223A; --surface-2:#1D2945; --ink:#E7ECF6; --muted:#9BA7C0; --line:#2B3756; --seg-ink:#9BA7C0;
   --accent:#86ADEB; --accent-ink:#0F1626; --accent-soft:#22345A;
   --hero:#1B3260; --hero-2:#14264A; --hero-ink:#F1F5FC; --hero-muted:rgba(241,245,252,.75); --hero-chip:rgba(255,255,255,.10);
   --marker:#E9BC3A; --marker-ink:#16233B; --rule:#222E4A; --redrule:#6E3B44;
@@ -150,7 +151,7 @@ body.has-tabs .dock{bottom:calc(62px + env(safe-area-inset-bottom,0px));padding-
 
 /* Choosers */
 .seg{display:grid;grid-template-columns:repeat(var(--cols,3),minmax(0,1fr));background:var(--line);border-radius:var(--r);padding:3px;gap:3px}
-.seg button{border:0;background:transparent;border-radius:calc(var(--r) - 3px);min-height:44px;font-weight:700;color:var(--muted);font-size:.95rem;padding:4px 6px}
+.seg button{border:0;background:transparent;border-radius:calc(var(--r) - 3px);min-height:44px;font-weight:700;color:var(--seg-ink);font-size:.95rem;padding:4px 6px}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(22,35,59,.18)}
 .seg.small button{min-height:44px;font-size:.85rem}
 .seg button:disabled{opacity:.4;cursor:default;text-decoration:line-through;text-decoration-thickness:1.5px}
