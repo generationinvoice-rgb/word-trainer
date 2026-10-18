@@ -1213,6 +1213,12 @@ function nbDup(r){const all=nbAll();const t=normNum(r.num);let b=baseNum(t);
   return all.find(x=>b&&baseNum(x.id)===b&&lc(x.en)===lc(r.en))||null}
 function nbUsed(r){const t=normNum(r.num);if(!t)return null;const all=nbAll();
   return all.find(x=>x.id===t)||(/^\d+$/.test(t)&&all.find(x=>baseNum(x.id)===t))||null}
+/* DEF-38: the same English word already in the notebook under another number (information only, it is still saved).
+   "poles = sticks" matches the whole entry and each part split on "=" and "/", with or without "(BrE)" */
+function enParts(en){const o=new Set();const n=v=>lc(v).replace(/\s+/g," ");const a=n(en);if(a)o.add(a);
+  String(en||"").split(/[=\/]/).forEach(p=>[p,p.replace(/\([^)]*\)/g,"")].forEach(q=>{q=n(q);if(q)o.add(q)}));return o}
+function nbSame(r){if(!r.en.trim())return [];const mine=enParts(r.en);const b=baseNum(normNum(r.num));
+  return nbAll().filter(x=>(!b||baseNum(x.id)!==b)&&[...enParts(x.en)].some(v=>mine.has(v))).slice(0,2).map(x=>x.id)}
 function unitWords(unit){const u=unitOf(unit);const s=new Set();if(!u)return s;
   u.sets.forEach(d=>DECKS[d].items.forEach(it=>[it.en,it.opp,it.label,it.base].forEach(v=>{if(v)s.add(lc(v))})));return s}
 function rowState(r,uw){
@@ -1220,8 +1226,8 @@ function rowState(r,uw){
     const dup=en&&!bad?nbDup(r):null;const used=en&&!bad&&!dup?nbUsed(r):null;
     /* two new words with the same number on this page: the server would keep only the first */
     const twice=!!(en&&t&&!bad&&!dup&&!used&&ADD.rows.some(x=>x!==r&&x.kind==="nb"&&x.en.trim()&&normNum(x.num)===t&&!nbDup(x)));
-    const fix=!!(bad||used||twice);
-    return{dup,used,bad,twice,fix,block:fix||!dup&&(r.status==="choose"||r.status==="unreadable")&&!r.resolved,save:en&&!dup&&!fix}}
+    const fix=!!(bad||used||twice);const same=en&&!dup?nbSame(r):[];
+    return{dup,used,bad,twice,fix,same,block:fix||!dup&&(r.status==="choose"||r.status==="unreadable")&&!r.resolved,save:en&&!dup&&!fix}}
   const dup=uw&&uw.has(lc(r.en));return{dup,block:false,save:r.keep&&!!r.en.trim()&&!dup}}
 const secOk=()=>!!(ADD.sec&&ADD.sec.unit&&ADD.sec.lesson&&new RegExp("^"+ADD.sec.unit+"\\.\\d+$").test(ADD.sec.lesson));
 /* new notebook numbers must follow the notebook (same rule as saveNotebookWords on the server) */
@@ -1258,8 +1264,9 @@ function rowHtml(r,i,uw,ro){const stt=rowState(r,uw);const dis=ro?" disabled":""
   if(stt.dup)note=`<div class="note info">${icon("alert")}<span>Already in your notebook as #${esc(stt.dup.id)} ${esc(stt.dup.en)}. It will not be added again.</span></div>`;
   else if(stt.bad==="zero")note=`<div class="note">${icon("alert")}<span>Numbers start at 1. Change the number.</span></div>`;
   else if(stt.bad)note=`<div class="note">${icon("alert")}<span>“${esc(normNum(r.num))}” is not a notebook number. Use a number like 240 or 240a.</span></div>`;
-  else if(stt.used)note=`<div class="note">${icon("alert")}<span>#${esc(normNum(r.num))} is already used for “${esc(stt.used.en)}”. Change the number.</span></div>`;
+  else if(stt.used)note=`<div class="note">${icon("alert")}<span>#${esc(normNum(r.num))} is already used for “${esc(stt.used.en)}”. Change the number, or delete this row if it is the same word.</span></div>`;
   else if(stt.twice)note=`<div class="note">${icon("alert")}<span>This number is used twice on this page. Change one of them.</span></div>`;
+  if(stt.same&&stt.same.length)note+=`<div class="note info" data-same>${icon("alert")}<span>You already have this word as ${stt.same.map(x=>"#"+esc(x)).join(" and ")}.</span></div>`;
   if(stt.dup){/* a duplicate is not added: no other note */}
   else if(r.status==="choose"&&!r.resolved)note+=`<div class="note">${icon("alert")}<span>${esc(r.note||"Which one is right?")} You wrote “${esc(pairTxt(r.wen,r.wbg))}”.</span></div>
     <div class="opts2">${r.options.slice(0,2).map((o,k)=>`<button class="chip" data-opt="${k}">${esc(pairTxt(o.en,o.bg))}</button>`).join("")}<button class="chip" data-opt="both">Both</button></div>`;
