@@ -1373,22 +1373,48 @@ function doSave(){if(ADD.saving)return;
   const rows=ADD.rows.filter(r=>rowState(r,uw).save);if(!rows.length)return;
   const sendRows=nb?ADD.rows.filter(r=>r.en.trim()&&!rowState(r,uw).fix):rows; /* never send a row whose number must be changed */
   ADD.saving=true;keep(render);
-  const fail=()=>{ADD.saving=false;toast("Could not save. Check the connection and try again.");if(top_().name==="addReview")keep(render)};
+  const corrections=nb?rows.map(corrFor).filter(Boolean):[];
+  const s=ADD.sec;const title=nb?"":(s.title||"").trim()||"Lesson "+s.lesson;
+  const dups=nb?0:ADD.rows.filter(r=>rowState(r,uw).dup).length; /* not sent, so the server cannot count them */
+  const noSave=()=>{ADD.saving=false;toast("Could not save. Check the connection and try again.");if(top_().name==="addReview")keep(render)};
+  /* the answer can be lost after the server saved (timeout, network): savedAnyway reads the words again */
+  const fail=()=>savedAnyway(nb,rows,sendRows,corrections,title,dups).then(ok=>{if(!ok)noSave()},noSave);
   if(nb){
     const entries=sendRows.map(r=>({num:normNum(r.num)||null,en:r.en.trim(),bg:r.bg.trim()}));
-    const corrections=rows.map(corrFor).filter(Boolean);
     call("saveNotebookWords",JSON.stringify({entries,corrections})).then(txt=>{const res=JSON.parse(txt);
       if(res.error==="numbers"){ADD.saving=false;ADD.numErr={last:res.last,first:res.first};if(top_().name==="addReview")keep(render);return}
       const filled=fillCorrNums(corrections,res.added||[]);
       return reloadNotebook().then(()=>loadCorrections()).then(()=>{patchCorr(filled);ADD.saving=false;ADD.saved={kind:"nb",res,corrections,at:Date.now()};replace("addSaved")})}).catch(fail);
   }else{
-    const s=ADD.sec;const title=(s.title||"").trim()||"Lesson "+s.lesson;
     const words=rows.map(r=>({en:r.en.trim(),bg:r.bg.trim(),def:r.def||"",pos:r.pos||""}));
-    const dups=ADD.rows.filter(r=>rowState(r,uw).dup).length; /* not sent, so the server cannot count them */
     call("saveTextbookWords",JSON.stringify({unit:s.unit,lesson:s.lesson,title,words})).then(txt=>{const res=JSON.parse(txt);
       return loadTextbook().then(()=>{ADD.saving=false;ADD.saved={kind:"tb",res,title,dups,at:Date.now()};replace("addSaved")})}).catch(fail);
   }
 }
+/* DEF-26: a save whose answer was lost. When every word sent is in the notebook (textbook) now, it was saved: Saved,
+   with Undo when the server names the batch of that save (lastBatch, Code.gs v4.3) and it holds exactly these words.
+   Resolves false (the caller says "Could not save") when the words are not all there; rejects when the read fails. */
+function lostBatch(src,ok){return call("lastBatch",src).then(t=>{const r=JSON.parse(t);return r&&r.batch&&r.items&&ok(r.items)?r:null}).catch(()=>null)}
+function savedAnyway(nb,rows,sendRows,corrections,title,dups){
+  const show=(sv,b)=>{ADD.saving=false;ADD.saved=Object.assign(sv,{at:Date.now()-(b&&b.age||0),noUndo:!b});sv.res.batch=b?b.batch:"";replace("addSaved");return true};
+  if(nb)return call("getNotebook").then(t=>{const rws=JSON.parse(t||"null");if(!Array.isArray(rws)||!rws.length)return false;
+    setNotebook(rws);try{localStorage.setItem("maya-nb-cache",JSON.stringify(rws))}catch(e){}
+    const found=rows.map(nbDup);if(found.some(x=>!x))return false;
+    const added=[],ids=new Set();found.forEach((x,i)=>{if(!ids.has(x.id)){ids.add(x.id);added.push({num:x.id,en:rows[i].en.trim()})}});
+    const skipped=sendRows.filter(r=>!rows.includes(r)).map(r=>({num:normNum(r.num),en:r.en.trim(),reason:"already in the notebook"}));
+    for(let k=added.length;k<rows.length;k++)skipped.push({reason:"already in the notebook"}); /* the same word twice on the page */
+    return lostBatch("Notebook",it=>Array.isArray(it.notebook)&&it.notebook.length===ids.size&&it.notebook.every(n=>ids.has(String(n)))).then(b=>{
+      const filled=fillCorrNums(corrections,added);
+      return loadCorrections().then(()=>{patchCorr(filled);return show({kind:"nb",res:{added,skipped,renumbered:[]},corrections},b)})})});
+  const s=ADD.sec;
+  return call("getTextbook").then(t=>{const tb=JSON.parse(t||"null");if(!setTextbook(tb))return false;
+    try{localStorage.setItem("maya-tb-cache",t)}catch(e){}
+    const uw=unitWords(s.unit);const m=new Map();rows.forEach(r=>{const en=r.en.trim();if(!m.has(lc(en)))m.set(lc(en),en)});
+    if([...m.keys()].some(k=>!uw.has(k)))return false;
+    const added=[...m.values()];const skipped=rows.slice(added.length).map(r=>r.en.trim());
+    return lostBatch("Textbook",it=>{const x=it.textbook;return !!x&&String(x.unit)===String(s.unit)&&x.deck==="L"+s.lesson&&Array.isArray(x.ids)&&
+      x.ids.length===m.size&&x.ids.every(id=>m.has(lc(String(id).replace(/ \(\d+\)$/,""))))})
+      .then(b=>show({kind:"tb",res:{unit:s.unit,deck:"L"+s.lesson,added,skipped},title,dups},b))})}
 SCREENS.addSaved=()=>{const sv=ADD.saved;const res=sv.res;const n=res.added.length;const nb=sv.kind==="nb";
   const nums=nb?res.added.map(a=>a.num).sort((a,b)=>a.localeCompare(b,"en",{numeric:true})):[];
   const where=nb?(n?"Notebook #"+nums[0]+(n>1?" to #"+nums[nums.length-1]:""):"Notebook"):"Unit "+res.unit+" · "+(ADD.sec.lesson)+" · "+sv.title;
@@ -1404,6 +1430,7 @@ SCREENS.addSaved=()=>{const sv=ADD.saved;const res=sv.res;const n=res.added.leng
     ${other?`<p id="otherline">${plural(other,"word")} could not be added because ${other===1?"its number is":"their numbers are"} already used.</p>`:""}
     <p class="hint">${n?"They are saved online, on all your devices.":other?"Fix the numbers and save the page again.":"All the words from this page are already in the app."}</p></div>
     ${canUndo?`<div class="undo"><button class="btn ghost" id="undo">${icon("redo")} Undo</button><span class="hint">You can undo this for 10 minutes.</span></div>`:""}
+    ${n&&sv.noUndo?`<p class="hint" id="noundo">Undo is not available for this save.</p>`:""}
     ${sv.late?`<p class="hint" id="late">It's too late to undo here. Ask Dad to remove these words.</p>`:""}
     ${nb&&sv.corrections.length?`<section class="field-row"><span class="label">Fix these in your notebook</span><div class="list">${sv.corrections.map(c=>`<div class="rowlink"><div class="fixcard">
       <span class="nr">${c.num?"#"+esc(c.num):"No number"}</span><span>You wrote: <s>${esc(c.wrote)}</s></span><span class="ok">Correct: ${esc(c.correct)}</span>${c.note?`<span class="note-line">${esc(c.note)}</span>`:""}</div></div>`).join("")}</div>
