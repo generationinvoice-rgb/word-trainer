@@ -1039,13 +1039,18 @@ function startQuiz(p,onlyMistakes,items){
   S.pref.lastByDeck=lbd;if(p.flashDir)S.pref.flashDir=p.flashDir;
   save();
   Q={p,deck:d,mode:p.mode,dir:p.dir,mistakes:!!onlyMistakes,queue:list.map(it=>({it,retry:false})),i:0,first:new Map(),
-    items:new Map(list.map(it=>[it.id,it])),total:list.length};
+    items:new Map(list.map(it=>[it.id,it])),total:list.length,log:[]};
   closeSheet(true);go("quiz")}
 function answer(ok){
   const cur=Q.queue[Q.i];const id=cur.it.id;
   if(!Q.first.has(id)){Q.first.set(id,ok);grade(Q.deck,id,ok)}
+  Q.log.push(ansRow(Q.deck,cur.it,ok,cur.retry,modeTitle(Q.deck,Q.mode,Q.dir)));
   if(!ok&&!cur.retry)Q.queue.push({it:cur.it,retry:true});
 }
+/* one row for the Answers sheet (logAnswers, server v4.5): the word's real deck, also in "All of Unit n";
+   again = the repeat of a word answered wrongly earlier in this practice */
+function ansRow(d,it,ok,again,mode){const D=DECKS[d];if(D&&D.mix)return ansRow(it.d,it.it,ok,again,mode);
+  return{deck:d,id:String(it.id),en:D&&D.type==="nb"?String(it.en||""):itemLabel(d,it),bg:String(it.bg||""),ok:!!ok,again:!!again,mode}}
 function next(){Q.i++;if(!Q.queue[Q.i]){finish();return}render()}
 
 SCREENS.quiz=()=>{
@@ -1137,12 +1142,14 @@ function finish(){
   const dirTxt=twoDir(d)&&Q.mode!=="type"?(Q.dir==="en"?", EN→BG":", BG→EN"):"";
   const deckName=D.mix?"Unit "+D.unit+" (all sets)":d==="nb"?"Notebook "+nbLabel(Q.p):D.topic?"Topic: "+D.name:D.name;
   const what=deckName+" · "+modeTitle(d,Q.mode,Q.dir)+(Q.mistakes?" (mistakes)":"");
-  const logged=n>=MIN_LOG;
+  const logged=n>=MIN_LOG;const sid=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   const R={d,ok,n,wrong,wrongItems:wrongIds.map(id=>Q.items.get(id)).filter(Boolean),what,p:Q.p,logged,when,sent:""};
   if(logged){S.log.push({when,what,ok,n,ts:Date.now()});S.log=S.log.slice(-30);save();
     if(GAS){R.sent="wait";const done=v=>{R.sent=v;const m=$("#logmsg");if(m&&top_()&&top_().params===R)m.textContent=logMsg(R)};
-      call("logSession",{deck:deckName,mode:modeTitle(d,Q.mode,Q.dir),dir:dirTxt.replace(", ",""),mistakesOnly:Q.mistakes,ok,n,wrong:wrong.join(", ")})
+      call("logSession",{deck:deckName,mode:modeTitle(d,Q.mode,Q.dir),dir:dirTxt.replace(", ",""),mistakesOnly:Q.mistakes,ok,n,wrong:wrong.join(", "),session:sid})
         .then(()=>done("ok"),()=>done("err"))}}
+  /* every graded word, also in practices with 1 or 2 answers; a server before v4.5 answers "Unknown function": ignored */
+  if(GAS&&Q.log.length)call("logAnswers",{session:sid,deck:deckName,mode:modeTitle(d,Q.mode,Q.dir),answers:Q.log.slice(0,200)}).catch(()=>{});
   Q=null;replace("result",R);
 }
 const logMsg=R=>R.sent==="ok"?"Your results are saved. Dad can see them.":R.sent==="err"?"Your answers are saved on this device. Dad can't see this result: there was no connection.":"Your answers are saved.";
