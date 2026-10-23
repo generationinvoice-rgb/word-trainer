@@ -142,7 +142,6 @@ body.has-tabs .dock{bottom:calc(62px + env(safe-area-inset-bottom,0px));padding-
 .unit-head span{color:var(--muted);font-size:.85rem}
 .unit-head .chev{transition:transform .2s;color:var(--muted)}
 .unit-head[aria-expanded="true"] .chev{transform:rotate(90deg)}
-.older{display:flex;flex-direction:column;gap:6px;padding-left:12px;border-left:2px solid var(--line)}
 .section-title{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .field-row{display:flex;flex-direction:column;gap:8px}
 .hint{font-size:.85rem;color:var(--muted)}
@@ -580,7 +579,7 @@ function migratePref(){
 }
 migratePref();
 /* progress older than RESET_AT is discarded, on the device and in the cloud */
-const RESET_AT=1791816900000;
+const RESET_AT=1792760400000; /* 23.10.2026 15:40 local: fresh start for Maya after the test weeks */
 if((S.resetAt||0)<RESET_AT){S={st:{},days:[],log:[],pref:S.pref,resetAt:RESET_AT};try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 let cloud=GAS?"syncing":"off",pushTimer=null;
 const call=(fn,...a)=>GSR?new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...a)):apiCall(fn,a);
@@ -849,7 +848,7 @@ function openDeckSheet(d){
   openSheet("",draw)}
 
 /* ---------- Home ---------- */
-let OPEN_UNIT=null,SHOW_OLDER=false,SHOW_MORE_TOPICS=false;
+let OPEN_UNIT=null,SHOW_MORE_TOPICS=false;
 function deckTile(d){const D=DECKS[d];const c=counts(d,D.items);
   return `<button class="tile" data-deck="${esc(d)}"><span class="t">${esc(D.name)}</span>
     <span class="s">${plural(c.total,"word")}</span>${c.mist?`<span class="s bad">${plural(c.mist,"mistake")}</span>`:""}
@@ -864,9 +863,8 @@ function unitBlock(u){const open=openUnit()===u.n;const tot=u.sets.reduce((a,d)=
   return `<div class="unit"><button class="unit-head" data-unit="${esc(u.n)}" aria-expanded="${open}"><span class="txt"><b>Unit ${esc(u.n)}${u.topic?" · "+esc(u.topic):""}</b><span>${esc(u.sub)} · ${plural(u.sets.length,"set")} · ${plural(tot,"word")}</span></span>${icon("chev","chev")}</button>
     ${open?`<div class="tiles">${allTile(u)}${u.view.map(s=>(grouped?`<span class="sec-label">${esc(s.id)}${s.title?" · "+esc(s.title):""}</span>`:"")+s.decks.map(deckTile).join("")).join("")}</div>`:""}</div>`}
 function unitsHtml(){const L=UNITS;if(!L.length)return `<p class="hint">The textbook words are not available right now.</p>`;
-  const head=L.slice(0,2),older=L.slice(2);if(older.some(u=>u.n===openUnit()))SHOW_OLDER=true;
-  return head.map(unitBlock).join("")+(older.length?`<div class="unit"><button class="unit-head" id="older" aria-expanded="${SHOW_OLDER}"><span class="txt"><b style="font-size:1rem">Older units (${older.length})</b><span>Unit ${esc(older[older.length-1].n)} to Unit ${esc(older[0].n)}</span></span>${icon("chev","chev")}</button>
-    ${SHOW_OLDER?`<div class="older">${older.map(unitBlock).join("")}</div>`:""}</div>`:"")}
+  /* 23.10.2026 (Miro): every unit is listed, newest first, no "Older units" group; the newest is open by default. */
+  return L.map(unitBlock).join("")}
 /* Topics on Home: the 4 newest topics, the others folded into "More topics (n)" */
 function topicsHtml(){const head=TOPICS.slice(0,4),more=TOPICS.slice(4);
   const tiles=L=>`<div class="tiles">${L.flatMap(t=>t.sets).map(deckTile).join("")}</div>`;
@@ -907,7 +905,6 @@ SCREENS.home=()=>{const sk=streak();const tl=totalLearned();
     dock:contDock(),
     after(){$$("[data-deck]").forEach(b=>b.onclick=()=>openDeckSheet(b.dataset.deck));
       $$("[data-unit]").forEach(b=>b.onclick=()=>{const n=b.dataset.unit;OPEN_UNIT=openUnit()===n?"":n;keep(render)});
-      const ol=$("#older");if(ol)ol.onclick=()=>{SHOW_OLDER=!SHOW_OLDER;keep(render)};
       const mt=$("#moretopics");if(mt)mt.onclick=()=>{SHOW_MORE_TOPICS=!SHOW_MORE_TOPICS;keep(render)};
       const fl=$("#fixl");if(fl)fl.onclick=()=>go("fix");
       const nr=$("#nbretry");if(nr)nr.onclick=()=>{NB_STATE="loading";keep(render);loadNotebook()};
