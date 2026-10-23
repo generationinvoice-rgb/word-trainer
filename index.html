@@ -579,7 +579,7 @@ function migratePref(){
 }
 migratePref();
 /* progress older than RESET_AT is discarded, on the device and in the cloud */
-const RESET_AT=1792760400000; /* 23.10.2026 15:40 local: fresh start for Maya after the test weeks */
+const RESET_AT=1792786500000; /* 23.10.2026 15:40 local: fresh start for Maya after the test weeks */
 if((S.resetAt||0)<RESET_AT){S={st:{},days:[],log:[],pref:S.pref,resetAt:RESET_AT};try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 let cloud=GAS?"syncing":"off",pushTimer=null;
 const call=(fn,...a)=>GSR?new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...a)):apiCall(fn,a);
