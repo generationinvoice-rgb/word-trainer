@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap">
 <style>
-/* Word Trainer v4.4 (18.10.2026): Topics, the teacher's sheets as a third source (Notebook, Focus, Topics). v4.1 (17.10.2026): Add words starts with the photo (no Source step), clearer duplicate/limit/number messages, Undo, no overscroll. v4: runs on GitHub Pages (fetch to Apps Script) and inside /exec (google.script.run). v3: Home with hero, tiles and units, bottom sheet for "how", tab bar, Add words. */
+/* Word Trainer v4.5 (25.10.2026): Irregular verbs, a deck of type "verbs" (list "verbs" in textbook.json) with four modes: Flashcards, Pick the forms, Write the forms, Meaning. v4.4 (18.10.2026): Topics, the teacher's sheets as a third source (Notebook, Focus, Topics). v4.1 (17.10.2026): Add words starts with the photo (no Source step), clearer duplicate/limit/number messages, Undo, no overscroll. v4: runs on GitHub Pages (fetch to Apps Script) and inside /exec (google.script.run). v3: Home with hero, tiles and units, bottom sheet for "how", tab bar, Add words. */
 :root{
   --bg:#EDF1F7; --surface:#FFFFFF; --surface-2:#F5F7FB; --ink:#16233B; --muted:#5B6884; --line:#D3DBE8;
   --seg-ink:#4C5975; /* unselected segment text on --line: 5.0:1 (muted gives 4.0:1) */
@@ -223,6 +223,11 @@ mark{background:linear-gradient(transparent 12%,var(--marker) 12%,var(--marker) 
 .typebox{display:flex;gap:8px}
 .typebox input{flex:1;min-width:0;font:inherit;font-size:1.25rem;padding:12px 14px;min-height:56px;border:1.5px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink)}
 .typebox input.right{border-color:var(--good)} .typebox input.wrong{border-color:var(--bad)}
+/* Write the forms (verbs): two fields one under the other, each with its label */
+.typebox.two{flex-direction:column;gap:10px}
+.typebox.two label{display:flex;flex-direction:column;gap:4px;min-width:0}
+.typebox.two input{width:100%}
+.typebox.two .btn{align-self:stretch}
 .typebox .btn{padding-inline:16px}
 .fb{border-radius:var(--r);padding:8px 12px;display:flex;flex-direction:column;gap:2px}
 .fb.ok{background:var(--good-bg);color:var(--good)}
@@ -500,15 +505,19 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-say]");if(
 
 /* ---------- data: textbook decks, notebook ---------- */
 const DECKS={nb:{name:"Notebook",type:"nb",items:[]}};
-let UNITS=[],TB=null,TOPICS=[];
-/* one deck of textbook.json (a Focus section or a topic): null when the type is unknown or nothing is left */
-function tbDeck(dk,decks){
+let UNITS=[],TB=null,TOPICS=[],VERBS=[];
+/* the forms of an irregular verb: a list ("was", "were") or one text with "/" between the variants */
+const formList=v=>(Array.isArray(v)?v:String(v==null?"":v).split("/")).map(x=>String(x==null?"":x).trim()).filter(Boolean);
+/* one deck of textbook.json (a Focus section, a topic or the irregular verbs): null when the type is unknown or nothing is left.
+   Type "verbs" (25.10.2026) is only accepted from the list "verbs" (verbsList), never inside a unit or a topic. */
+function tbDeck(dk,decks,verbsList){
   if(!dk||!dk.id||dk.id==="nb"||decks[dk.id]||/^unit\d/.test(dk.id))return null;
-  const type=dk.type||"vocab";if(!["vocab","opposites","prep"].includes(type))return null; /* unknown type: no deck */
-  const items=(dk.items||[]).map(it=>type==="opposites"?{id:String(it.id),base:it.base,opp:it.opp,bg:it.bg||"",ex:it.ex||[]}
+  const type=dk.type||"vocab";if(!["vocab","opposites","prep"].concat(verbsList?["verbs"]:[]).includes(type))return null; /* unknown type: no deck */
+  const items=(Array.isArray(dk.items)?dk.items:[]).filter(it=>it&&typeof it==="object").map(it=>type==="opposites"?{id:String(it.id),base:it.base,opp:it.opp,bg:it.bg||"",ex:it.ex||[]}
     :type==="prep"?{id:String(it.id),label:it.label,acc:it.acc||[],s:it.s,bg:it.bg||""}
+    :type==="verbs"?{id:String(it.id||it.inf),inf:String(it.inf||"").trim(),past:formList(it.past),pp:formList(it.pp),bg:it.bg||""}
     :{id:String(it.id),en:it.en,bg:it.bg||"",def:it.def||""})
-    .filter(it=>type==="opposites"?it.base&&it.opp:type==="prep"?it.s&&it.acc.length:it.en);
+    .filter(it=>type==="opposites"?it.base&&it.opp:type==="prep"?it.s&&it.acc.length:type==="verbs"?it.inf&&it.past.length&&it.pp.length:it.en);
   return items.length?{name:dk.name||dk.id,type,items}:null}
 function setTextbook(tb){
   if(!tb||!Array.isArray(tb.units))return false;
@@ -539,21 +548,29 @@ function setTextbook(tb){
     const tp={id:String(t.id),title:String(t.title||t.id),updated:String(t.updated||""),sources:(Array.isArray(t.sources)?t.sources:[]).filter(Boolean).map(String),sets:[]};
     (Array.isArray(t.decks)?t.decks:[]).forEach(dk=>{const D=tbDeck(dk,decks);if(!D)return;decks[dk.id]=Object.assign(D,{topic:tp.id});tp.sets.push(dk.id)});
     if(tp.sets.length)topics.push(tp)});
+  /* Irregular verbs (25.10.2026): the list "verbs" next to units and topics, decks of type "verbs" (id "irr"); not part of
+     any unit, so "All of Unit n" never has them. A deck without valid inf/past/pp items is skipped like the other types. */
+  const verbs=[];
+  (Array.isArray(tb.verbs)?tb.verbs:[]).forEach(dk=>{const D=tbDeck(dk,decks,true);if(!D||D.type!=="verbs")return;
+    decks[dk.id]=Object.assign(D,{verbs:true,source:String(dk.source||"")});verbs.push(dk.id)});
   Object.keys(DECKS).forEach(k=>{if(k!=="nb")delete DECKS[k]});
   Object.assign(DECKS,decks);
   UNITS=units.sort((a,b)=>b.num-a.num||String(b.n).localeCompare(String(a.n)));
   TOPICS=topics.sort((a,b)=>b.updated.localeCompare(a.updated)||a.title.localeCompare(b.title));
+  VERBS=verbs;
   TB=tb;return true;
 }
 setTextbook(TB_DEFAULT);
 try{const c=JSON.parse(localStorage.getItem("maya-tb-cache")||"null");if(c)setTextbook(c)}catch(e){}
-const realDecks=()=>UNITS.flatMap(u=>u.sets).concat(TOPICS.flatMap(t=>t.sets));
-const shownDecks=()=>UNITS.flatMap(u=>u.view.flatMap(s=>s.decks)).concat(TOPICS.flatMap(t=>t.sets)); /* newest unit and section first, then the topics */
+const realDecks=()=>UNITS.flatMap(u=>u.sets).concat(VERBS,TOPICS.flatMap(t=>t.sets));
+const shownDecks=()=>UNITS.flatMap(u=>u.view.flatMap(s=>s.decks)).concat(VERBS,TOPICS.flatMap(t=>t.sets)); /* newest unit and section first, then the verbs, then the topics */
+const isVerbs=d=>!!(DECKS[d]&&DECKS[d].type==="verbs");
+const unitWord=d=>isVerbs(d)?"verb":"word"; /* "86 verbs", "10 words" */
 const unitOf=n=>UNITS.find(u=>u.n===String(n));
 const topicOf=id=>TOPICS.find(t=>t.id===String(id));
 const topicByTitle=title=>{const k=String(title||"").trim().toLowerCase();return k?TOPICS.find(t=>t.title.toLowerCase()===k)||null:null};
 /* where a deck is from: a Focus unit, Topics, or the notebook */
-const deckWhere=d=>{const D=DECKS[d];return d==="nb"?"Vocabulary notebook":D&&D.topic?"Topics":"Unit "+(D?D.unit:"")};
+const deckWhere=d=>{const D=DECKS[d];return d==="nb"?"Vocabulary notebook":D&&D.topic?"Topics":D&&D.verbs?"Focus":"Unit "+(D?D.unit:"")};
 
 let NB_STATE=GAS?"loading":"none";
 function setNotebook(rows){
@@ -697,6 +714,12 @@ function modesFor(d){
     {k:"flash",mode:"flash",dir:"en",ic:icon("cards"),t:"Flashcards",s:"See the sentence, think of the word"},
     {k:"choice",mode:"choice",dir:"en",ic:txtIcon("in?"),t:"Pick the preposition",s:"Choose from 4 options"},
     {k:"type",mode:"type",dir:"en",ic:icon("pen"),t:"Write the preposition",s:"Type the missing word"}];
+  /* irregular verbs (25.10.2026): the two "choice" modes differ by dir, like Personality; flash has no "Show first" */
+  if(t==="verbs")return[
+    {k:"flash",mode:"flash",dir:"en",ic:icon("cards"),t:"Flashcards",s:"See the verb, think of its three forms"},
+    {k:"forms",mode:"choice",dir:"en",ic:txtIcon("V2?"),t:"Pick the forms",s:"Past simple or past participle, 4 options"},
+    {k:"writeforms",mode:"type",dir:"en",ic:icon("pen"),t:"Write the forms",s:"Type the past simple and the past participle"},
+    {k:"meaning",mode:"choice",dir:"bg",ic:txtIcon("Б→A"),t:"Meaning",s:"See Bulgarian, choose the verb"}];
   return[
     {k:"flash",mode:"flash",dir:null,ic:icon("cards"),t:"Flashcards",s:"Turn the card. Did you know it?"},
     {k:"meaning",mode:"choice",dir:"en",ic:txtIcon("A→Б"),t:"Pick the meaning",s:"See English, choose Bulgarian"},
@@ -704,12 +727,14 @@ function modesFor(d){
     {k:"write",mode:"type",dir:"en",ic:icon("pen"),t:"Write the word",s:"See Bulgarian, type English"}];
 }
 const twoDir=d=>DECKS[d]&&(DECKS[d].type==="vocab"||DECKS[d].type==="nb");
-function modeTitle(d,mode,dir){const ms=modesFor(d);const m=ms.find(x=>x.mode===mode&&(mode!=="choice"||!twoDir(d)||x.dir===dir))||ms.find(x=>x.mode===mode);return m?m.t:mode}
+/* decks whose two "choice" modes are told apart by dir (vocab, notebook, verbs); twoDir alone also means "flash can start in Bulgarian" */
+const choiceDirs=d=>twoDir(d)||isVerbs(d);
+function modeTitle(d,mode,dir){const ms=modesFor(d);const m=ms.find(x=>x.mode===mode&&(mode!=="choice"||!choiceDirs(d)||x.dir===dir))||ms.find(x=>x.mode===mode);return m?m.t:mode}
 function deckTitle(d,p=S.pref){const D=DECKS[d];if(!D)return "Practice";if(D.mix)return "Unit "+D.unit+" · all sets";if(d==="nb")return "Notebook · "+nbLabel(p);return D.name+" · "+deckWhere(d)}
 function prefValid(p=S.pref){return !!DECKS[p.deck]&&modesFor(p.deck).some(m=>m.mode===p.mode)}
 function prefSummary(p=S.pref){const d=p.deck;const items=deckItems(d,p);const n=p.n==="all"?items.length:Math.min(p.n,items.length);
   const fl=p.mode==="flash"&&twoDir(d)&&p.dir==="bg"?" (Bulgarian first)":"";
-  return{what:deckTitle(d,p),how:modeTitle(d,p.mode,p.dir)+fl+" · "+plural(n,"word")}}
+  return{what:deckTitle(d,p),how:modeTitle(d,p.mode,p.dir)+fl+" · "+plural(n,unitWord(d))}}
 
 /* ---------- navigation: an in-app stack; every inner screen has a visible way back ---------- */
 const SCREENS={};
@@ -801,7 +826,7 @@ function modePanel(d,draft){
     <div class="field-row"><span class="label">How many words</span>
       <div class="seg small" style="--cols:3">${[["10","10"],["20","20"],["all","All "+nAll]].map(([v,l])=>`<button data-n="${v}" ${nOver(v,nAll)?"disabled ":""}aria-pressed="${nSel(draft.n,nAll)===v}">${l}</button>`).join("")}</div></div>
     <div class="field-row"><span class="label">Start practising</span>
-    <div class="modes">${ms.map(m=>{const isLast=!!last&&last.mode===m.mode&&(m.mode!=="choice"||!twoDir(d)||last.dir===m.dir);
+    <div class="modes">${ms.map(m=>{const isLast=!!last&&last.mode===m.mode&&(m.mode!=="choice"||!choiceDirs(d)||last.dir===m.dir);
       return `<button class="mode${isLast?" last":""}" data-mode="${m.k}" ${nAll?"":"disabled"}><span class="ic">${m.ic}</span><span class="txt">${isLast?'<span class="tag">Last time</span>':""}<b>${m.t}</b><span>${m.s}</span></span><span class="go">${icon("play")}</span></button>`+
       (m.k==="flash"&&twoDir(d)?`<div class="flashopt"><span>Show first</span><div class="seg small"><button data-fdir="en" aria-pressed="${(draft.flashDir||"en")!=="bg"}">English</button><button data-fdir="bg" aria-pressed="${draft.flashDir==="bg"}">Bulgarian</button></div></div>`:"")}).join("")}
     </div></div>
@@ -837,7 +862,8 @@ function openDeckSheet(d){
   if(d!=="nb"&&S.pref.deck!==d){/* keep count and flash setting, the range is only for the notebook */}
   const D=DECKS[d];
   const small=d==="nb"?"Your vocabulary notebook":D.mix?"Focus · "+unitOf(D.unit).view.flatMap(s=>s.decks).map(x=>DECKS[x].name).join(", ")
-    :D.topic?"Topic sheet"+((topicOf(D.topic)||{sources:[]}).sources.length?" · "+topicOf(D.topic).sources.join(", "):""):"Unit "+D.unit+" · Focus";
+    :D.topic?"Topic sheet"+((topicOf(D.topic)||{sources:[]}).sources.length?" · "+topicOf(D.topic).sources.join(", "):"")
+    :D.verbs?verbsWhere(d):"Unit "+D.unit+" · Focus";
   const draw=sh=>{const c=counts(d,D.items);
     sh.querySelector(".sheet-in").innerHTML=`<div class="grab" aria-hidden="true"></div>
       <div class="sheet-head"><div class="txt"><p>${esc(small)}</p><h2>${esc(D.name)}</h2>
@@ -862,6 +888,13 @@ function unitBlock(u){const open=openUnit()===u.n;const tot=u.sets.reduce((a,d)=
   const grouped=u.view.length>1;
   return `<div class="unit"><button class="unit-head" data-unit="${esc(u.n)}" aria-expanded="${open}"><span class="txt"><b>Unit ${esc(u.n)}${u.topic?" · "+esc(u.topic):""}</b><span>${esc(u.sub)} · ${plural(u.sets.length,"set")} · ${plural(tot,"word")}</span></span>${icon("chev","chev")}</button>
     ${open?`<div class="tiles">${allTile(u)}${u.view.map(s=>(grouped?`<span class="sec-label">${esc(s.id)}${s.title?" · "+esc(s.title):""}</span>`:"")+s.decks.map(deckTile).join("")).join("")}</div>`:""}</div>`}
+/* Irregular verbs (25.10.2026): one wide tile per verbs deck (there is one, "irr"): verbs, learned, mistakes */
+const verbsWhere=d=>{const m=String(DECKS[d]&&DECKS[d].source||"").match(/p\.\s*[\d\s-]+\d/);return "Focus"+(m?" · "+m[0].replace(/\s+/g," "):"")};
+function verbsTile(d){const D=DECKS[d];const c=counts(d,D.items);
+  return `<button class="tile wide" data-deck="${esc(d)}"><span class="ic">${txtIcon("1·2·3")}</span><span class="col">
+    <span class="t">${esc(D.name)}</span><span class="s">${plural(c.total,"verb")} · ${c.learned} learned</span>${c.mist?`<span class="s bad">${plural(c.mist,"mistake")}</span>`:""}
+    <span class="bar"><i style="width:${pct(c.learned,c.total)}%"></i></span></span>${icon("chev","chev")}</button>`}
+const verbsHtml=()=>`<div class="tiles">${VERBS.map(verbsTile).join("")}</div>`;
 function unitsHtml(){const L=UNITS;if(!L.length)return `<p class="hint">The textbook words are not available right now.</p>`;
   /* 23.10.2026 (Miro): every unit is listed, newest first, no "Older units" group; the newest is open by default. */
   return L.map(unitBlock).join("")}
@@ -898,6 +931,9 @@ SCREENS.home=()=>{const sk=streak();const tl=totalLearned();
       <section class="field-row"><span class="label">Textbook · Focus</span>
         ${unitsHtml()}
       </section>
+      ${VERBS.length?`<section class="field-row" id="verbs"><span class="label">Verbs · Focus</span>
+        ${verbsHtml()}
+      </section>`:""}
       ${TOPICS.length?`<section class="field-row" id="topics"><span class="label">Topics</span>
         ${topicsHtml()}
       </section>`:""}
@@ -923,7 +959,7 @@ SCREENS.mistakes=()=>{const L=allMistakes();const tot=L.reduce((a,x)=>a+x.n,0);
     after(){$$("[data-mist]").forEach(b=>b.onclick=()=>{const d=b.dataset.mist;const last=(S.pref.lastByDeck||{})[d];
       const p=Object.assign({},S.pref,{deck:d});
       if(last&&modesFor(d).some(m=>m.mode===last.mode)){p.mode=last.mode;p.dir=last.dir}
-      else if(!modesFor(d).some(m=>m.mode===p.mode&&(p.mode!=="choice"||!twoDir(d)||m.dir===p.dir))){p.mode="choice";p.dir="en"}
+      else if(!modesFor(d).some(m=>m.mode===p.mode&&(p.mode!=="choice"||!choiceDirs(d)||m.dir===p.dir))){p.mode="choice";p.dir="en"}
       if(d==="nb"){p.nbLast=0;p.nbFrom=1;p.nbTo=""}startQuiz(p,true)})}}};
 SCREENS.mistakes.label="Mistakes";
 
@@ -969,9 +1005,43 @@ function distractors(d,it,n,keyFn){
   const seen=new Set();
   return shuffle(pool).filter(x=>{const k=norm(keyFn(x).t);if(seen.has(k))return false;seen.add(k);return true}).slice(0,n).map(keyFn);
 }
+/* ---------- irregular verbs (25.10.2026) ---------- */
+/* the regular -ed form, the wrong answer a learner reaches for: go -> goed, make -> maked, cut -> cutted, cry -> cried */
+function edForm(v){v=String(v||"").trim().toLowerCase();if(!v)return "";
+  if(/e$/.test(v)&&v.length>2)return v+"d"; /* be -> beed */
+  if(/[^aeiou]y$/.test(v))return v.slice(0,-1)+"ied";
+  if(/^[^aeiou]*[aeiou][^aeiouwxy]$/.test(v))return v+v.slice(-1)+"ed"; /* one short syllable ending in a consonant: doubled */
+  return v+"ed"}
+const verbForms=it=>it.inf+" · "+it.past.join("/")+" · "+it.pp.join("/");
+const verbSay=it=>[it.inf,it.past[0],it.pp[0]].join(", ");
+/* 3 wrong options for "What is the past simple / past participle of X?": the -ed form, the other form of the same verb when it
+   differs, then forms of other verbs that look or sound alike (same ending first, then the same first letter), never a form
+   that is a correct answer here, never the infinitive, never the same text twice */
+function verbDistractors(D,it,which){
+  const right=new Set(it[which].map(norm));const taken=new Set([...right,norm(it.inf)]);const out=[];
+  const add=w=>{const k=norm(w);if(!k||taken.has(k))return false;taken.add(k);out.push(w);return true};
+  add(edForm(it.inf));
+  (which==="past"?it.pp:it.past).forEach(add);
+  const target=norm(it[which][0]);const tail=target.slice(-2);
+  const others=shuffle(D.items.filter(x=>x!==it).flatMap(x=>[x.past[0],x.pp[0]]));
+  const score=w=>{const k=norm(w);return (k.endsWith(tail)?2:0)+(k[0]===target[0]?1:0)};
+  others.sort((a,b)=>score(b)-score(a));
+  for(const w of others){if(out.length>=3)break;add(w)}
+  return out.slice(0,3).map(t=>({t}))}
 function build(d,it,mode,dir){
   const D=DECKS[d];
   if(D.mix)return build(it.d,it.it,mode,"en");
+  if(D.type==="verbs"){
+    const forms=verbForms(it),say=verbSay(it);
+    if(mode==="flash")return{dtype:"verbs",ask:"Irregular verb",prompt:it.inf,lang:"en",sayPrompt:it.inf,sub:it.bg,subLang:"bg",answer:forms,say};
+    if(mode==="type")return{dtype:"verbs",ask:"Write the past simple and the past participle",prompt:it.inf,lang:"en",sayPrompt:it.inf,sub:it.bg,subLang:"bg",
+      twoFields:true,accept:acceptForms(it.past),accept2:acceptForms(it.pp),answer:forms,say};
+    if(dir==="bg")return{dtype:"verbs",ask:"How do you say it in English?",prompt:it.bg,lang:"bg",answer:forms,say,
+      options:shuffle([{t:it.inf,ok:true},...distractors(d,it,3,x=>({t:x.inf}))])};
+    const which=Math.random()<.5?"past":"pp";const f=it[which];
+    return{dtype:"verbs",ask:"What is the "+(which==="past"?"past simple":"past participle")+" of …?",prompt:it.inf,lang:"en",sayPrompt:it.inf,sub:it.bg,subLang:"bg",
+      answer:forms,say,extra:f.length>1?"Also correct: "+f.slice(1).join(", "):"",options:shuffle([{t:f[0],ok:true},...verbDistractors(D,it,which)])};
+  }
   if(D.type==="vocab"){
     const q=mode==="type"?{ask:"Write the word in English",prompt:it.bg,lang:"bg",sub:it.def,accept:[it.en],answer:it.en,say:it.en}
       :dir==="bg"?{ask:"How do you say it in English?",prompt:it.bg,lang:"bg",sub:it.def,subHidden:true,answer:it.en,extra:it.def,say:it.en,
@@ -1019,8 +1089,10 @@ function checkTyped(input,accept){
   for(const a of accept){const t=norm(a);if(t.length>3&&lev(n,t)===1)return "near"}
   return "bad";
 }
+/* accepted answers for one verb form: each variant alone ("was", "were") and the variants written together ("was/were", "was, were") */
+function acceptForms(list){const out=list.slice();if(list.length>1){const r=list.slice().reverse();[list,r].forEach(l=>{out.push(l.join("/"),l.join(", "),l.join(" "))})}return out}
 function itemLabel(d,it){const D=DECKS[d];if(!D||!it)return "";if(D.mix)return itemLabel(it.d,it.it);
-  return D.type==="nb"?it.en+" (#"+it.id+")":D.type==="opposites"?it.opp:D.type==="prep"?it.label:it.en}
+  return D.type==="nb"?it.en+" (#"+it.id+")":D.type==="opposites"?it.opp:D.type==="prep"?it.label:D.type==="verbs"?it.inf:it.en}
 
 /* ---------- session ---------- */
 let Q=null;
@@ -1058,13 +1130,18 @@ SCREENS.quiz=()=>{
   const cur=Q.queue[Q.i];const it=cur.it;const q=build(Q.deck,it,Q.mode,Q.dir);Q.q=q;Q.answered=false;
   const promptHtml=q.sentence?`<div class="big sentence">${esc(q.prompt).replace("___",'<span class="gap" id="gap">&nbsp;</span>')}</div>`
     :`<div class="big" lang="${q.lang}">${esc(q.prompt)}</div>${q.sayPrompt?sayBtn(q.sayPrompt):""}`;
-  const sub=q.sub?(q.subHidden?`<button class="hint-btn" id="hint">Hint</button><p class="def muted" id="subt" hidden>${esc(q.sub)}</p>`:`<p class="def muted" lang="en">${esc(q.sub)}</p>`):"";
+  const sub=q.sub?(q.subHidden?`<button class="hint-btn" id="hint">Hint</button><p class="def muted" id="subt" hidden>${esc(q.sub)}</p>`:`<p class="def muted" lang="${q.subLang||"en"}">${esc(q.sub)}</p>`):"";
   let body="";
+  const inp=(id,hint,ph,label)=>`<input id="${id}" type="text" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="${hint}" aria-label="${label}" placeholder="${ph}">`;
   if(Q.mode==="choice"){
     const short=q.options.every(o=>o.t.length<18);
     body=`<div class="opts${short?" short":""}" role="group">${q.options.map((o,i)=>`<button class="opt" data-i="${i}"><kbd>${i+1}</kbd><span>${esc(o.t)}</span></button>`).join("")}</div>`;
+  }else if(Q.mode==="type"&&q.twoFields){
+    /* Write the forms (verbs): Past Simple, then Past Participle; Enter in the first field moves to the second */
+    body=`<form class="typebox two" id="tf" autocomplete="off"><label><span class="label">Past Simple</span>${inp("ti","next","past simple","Past simple")}</label>
+      <label><span class="label">Past Participle</span>${inp("ti2","done","past participle","Past participle")}</label><button class="btn primary" type="submit">Check</button></form>`;
   }else if(Q.mode==="type"){
-    body=`<form class="typebox" id="tf" autocomplete="off"><input id="ti" type="text" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" aria-label="Your answer" placeholder="${q.dtype==="prep"?"preposition":"in English"}"><button class="btn primary" type="submit">Check</button></form>`;
+    body=`<form class="typebox" id="tf" autocomplete="off">${inp("ti","done",q.dtype==="prep"?"preposition":"in English","Your answer")}<button class="btn primary" type="submit">Check</button></form>`;
   }
   return{html:`<div class="wrap" style="padding-top:calc(12px + env(safe-area-inset-top,0px))">
     <div class="qtop"><button class="backbtn" id="quit">${icon("back")}Stop</button><div class="bar"><i style="width:${pct(Q.first.size,Q.total)}%"></i></div><span class="qcount">${Math.min(Q.first.size+1,Q.total)} / ${Q.total}</span></div>
@@ -1082,14 +1159,15 @@ SCREENS.quiz=()=>{
       $("#quit").onclick=confirmStop;
       const h=$("#hint");if(h)h.onclick=()=>{$("#subt").hidden=false;h.hidden=true};
       if(Q.mode==="choice")$$(".opt").forEach(b=>b.onclick=()=>choose(+b.dataset.i));
-      if(Q.mode==="type"){const f=$("#tf");f.onsubmit=e=>{e.preventDefault();typed()};setTimeout(()=>{try{$("#ti").focus()}catch(e){}},30)}
+      if(Q.mode==="type"){const f=$("#tf");f.onsubmit=e=>{e.preventDefault();if(Q.q.twoFields)typedForms();else typed()};setTimeout(()=>{try{$("#ti").focus()}catch(e){}},30);
+        const t2=$("#ti2");if(t2)$("#ti").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();t2.focus()}}}
       if(Q.mode==="flash")$("#flip").onclick=flip;
     }}};
 SCREENS.quiz.label="Practice";
 function revealHtml(q){
-  const ans=q.answerHtml?`<p class="def" lang="en" style="font-weight:700">${q.answerHtml}</p>`:`<div class="prompt" style="margin:0"><span class="big" style="font-size:1.5rem"><mark>${esc(q.answer)}</mark></span>${q.say&&q.lang==="bg"||q.dtype==="opposites"?sayBtn(q.say):""}</div>`;
+  const ans=q.answerHtml?`<p class="def" lang="en" style="font-weight:700">${q.answerHtml}</p>`:`<div class="prompt" style="margin:0"><span class="big" style="font-size:1.5rem"><mark>${esc(q.answer)}</mark></span>${q.say&&q.lang==="bg"||q.dtype==="opposites"||q.dtype==="verbs"?sayBtn(q.say):""}</div>`;
   const extra=q.extra?`<p class="def muted"${/[a-z]/i.test(q.extra)&&!/[а-я]/i.test(q.extra)?' lang="en"':""}>${esc(q.extra)}</p>`:"";
-  const sayS=q.sentence?sayBtn(q.say):"";
+  const sayS=q.sentence||(q.dtype==="verbs"&&q.answerHtml)?sayBtn(q.say):"";
   return `<div class="back">${ans}${extra}${sayS}</div>`;
 }
 function showBack(){$("#qback").innerHTML=revealHtml(Q.q);const h=$("#hint");if(h)h.hidden=true;
@@ -1113,6 +1191,22 @@ function typed(){
   document.querySelector("#tf button").disabled=true;
   answer(ok);
   feedback(ok,r==="hyphen"?"Watch the hyphen: it is spelt "+esc(Q.q.accept[0])+".":r==="near"?"Almost! One letter is wrong. Check the spelling below.":ok?"":"You will see it again soon.");
+}
+/* Write the forms (verbs): right only when both fields are right; every variant counts, case does not; "Almost!" when one
+   field is right and the other is one letter off (a mistake, as elsewhere); an empty field is asked for, not graded;
+   the wrong form is marked in the answer */
+function typedForms(){
+  if(Q.answered)return;const q=Q.q;const a=$("#ti"),b=$("#ti2");
+  const r1=checkTyped(a.value,q.accept),r2=checkTyped(b.value,q.accept2);
+  if(r1==="empty"){a.focus();return}if(r2==="empty"){b.focus();return}
+  const ok1=r1==="ok"||r1==="hyphen",ok2=r2==="ok"||r2==="hyphen";const ok=ok1&&ok2;
+  a.classList.add(ok1?"right":"wrong");b.classList.add(ok2?"right":"wrong");a.readOnly=b.readOnly=true;try{b.blur()}catch(e){}
+  document.querySelector("#tf button").disabled=true;
+  const it=Q.queue[Q.i].it;const f=(l,bad)=>bad?"<mark>"+esc(l.join("/"))+"</mark>":esc(l.join("/"));
+  q.answerHtml=esc(it.inf)+" · "+f(it.past,!ok1)+" · "+f(it.pp,!ok2);
+  const near=ok1&&r2==="near"?"past participle":ok2&&r1==="near"?"past simple":"";
+  answer(ok);
+  feedback(ok,near?"Almost! One letter is wrong in the "+near+". Check the spelling below.":ok?"":"You will see it again soon.");
 }
 function flip(){
   showBack();const th=$("#taph");if(th)th.hidden=true;$("#card").classList.remove("tappable");
